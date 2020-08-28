@@ -9,15 +9,6 @@ pub enum Token {
     Operator(Operator),
 }
 
-impl std::string::ToString for Token {
-    fn to_string(&self) -> String {
-        match self {
-            Token::Value(obj) => obj.to_string(),
-            Token::Operator(op) => op.to_string(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Lexer {
     raw: Vec<char>,
