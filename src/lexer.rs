@@ -1,7 +1,7 @@
 use crate::error::*;
 use crate::util::*;
 
-pub const SPECIAL: &str = "!&|<>=";
+const SPECIAL: &str = "!&|<>=";
 
 #[derive(Debug)]
 pub enum Token {
@@ -264,5 +264,96 @@ impl Lexer {
                 None,
             )),
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // helper function to return string form of parsed
+    fn get(expr: &str) -> String {
+        match Lexer::new(String::from(expr)).make_tokens() {
+            Ok(tokens) => format!("{:?}", tokens),
+            Err(err) => format!("{:?}", err),
+        }
+    }
+
+    // helper function to test whether the first expression parses to the second
+    fn assert_eqv(first: &str, second: &str) {
+        assert_eq!(&get(first)[..], second);
+    }
+
+    // simple expressions without brackets
+    #[test]
+    fn simple() {
+        assert_eqv("1 + 2", "[Value(Int(1)), Operator(Add), Value(Int(2))]");
+        assert_eqv("1  + 2- 3 *45 ", "[Value(Int(1)), Operator(Add), Value(Int(2)), Operator(Subtract), Value(Int(3)), Operator(Multiply), Value(Int(45))]");
+        assert_eqv("72 * 4.0 + -1.0", "[Value(Int(72)), Operator(Multiply), Value(Float(4.0)), Operator(Add), Operator(UnaryMinus), Value(Float(1.0))]");
+    }
+
+    // valid parenthesis expressions
+    #[test]
+    fn paren() {
+        assert_eqv("(3 * 4)", "[Operator(LParen), Value(Int(3)), Operator(Multiply), Value(Int(4)), Operator(RParen)]");
+        assert_eqv("2 % (1 + 2 * 3 ) + 5", "[Value(Int(2)), Operator(Modulo), Operator(LParen), Value(Int(1)), Operator(Add), Value(Int(2)), Operator(Multiply), Value(Int(3)), Operator(RParen), Operator(Add), Value(Int(5))]");
+        assert_eqv("4 + (( 4+ 5 ) * (3) * 1)", "[Value(Int(4)), Operator(Add), Operator(LParen), Operator(LParen), Value(Int(4)), Operator(Add), Value(Int(5)), Operator(RParen), Operator(Multiply), Operator(LParen), Value(Int(3)), Operator(RParen), Operator(Multiply), Value(Int(1)), Operator(RParen)]");
+    }
+
+    // valid character expressions
+    #[test]
+    fn char() {
+        assert_eqv("'x'", "[Value(Char('x'))]");
+        assert_eqv("'\\n'", "[Value(Char('\\n'))]");
+    }
+
+    // valid boolean expressiobs
+    #[test]
+    fn bool() {
+        assert_eqv(
+            " 3 > 4",
+            "[Value(Int(3)), Operator(Greater), Value(Int(4))]",
+        );
+        assert_eqv("4 <= 5 ||5 > 6", "[Value(Int(4)), Operator(LessEquals), Value(Int(5)), Operator(Or), Value(Int(5)), Operator(Greater), Value(Int(6))]");
+        assert_eqv("!(1 == 1) && 2 != 2 || 3 + 1 > 4", "[Operator(Not), Operator(LParen), Value(Int(1)), Operator(Equals), Value(Int(1)), Operator(RParen), Operator(And), Value(Int(2)), Operator(NotEquals), Value(Int(2)), Operator(Or), Value(Int(3)), Operator(Add), Value(Int(1)), Operator(Greater), Value(Int(4))]");
+    }
+
+    // valid language constants
+    #[test]
+    fn constants() {
+        assert_eqv(
+            "TRUE || FALSE",
+            "[Value(Bool(true)), Operator(Or), Value(Bool(false))]",
+        );
+        assert_eqv(
+            " ARRAY:3",
+            "[Value(Array([])), Operator(ArrayAccess), Value(Int(3))]",
+        );
+        assert_eqv("UNDEFINED", "[Value(Undefined)]");
+    }
+
+    // should output error
+    #[test]
+    fn error() {
+        assert_eqv(
+            "    ",
+            "Error { err: SyntaxError, desc: \"Unexpected end of statement\", line: None }",
+        );
+        assert_eqv(
+            "'a",
+            "Error { err: IllegalCharError, desc: \"Trailing character literal\", line: None }",
+        );
+        assert_eqv(
+            "3 + (()()",
+            "Error { err: SyntaxError, desc: \"Unbalanced parenthesis\", line: None }",
+        );
+        assert_eqv(
+            "a += b ** cD",
+            "Error { err: NameError, desc: \"Variable a not found\", line: None }",
+        );
+        assert_eqv(
+            "'asdasdasdasdasd'",
+            "Error { err: IllegalCharError, desc: \"Too many characters in literal\", line: None }",
+        );
     }
 }
