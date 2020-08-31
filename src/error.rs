@@ -15,16 +15,17 @@ pub enum ErrorType {
 // get name from enum member
 impl ErrorType {
     fn as_string(&self) -> String {
+        use ErrorType::*;
         match self {
-            ErrorType::IllegalCharError => "Illegal Character",
-            ErrorType::RuntimeError => "Runtime Error",
-            ErrorType::IllegalArgumentError => "Illegal Argument",
-            ErrorType::SyntaxError => "Syntax Error",
-            ErrorType::IllegalCastError => "Illegal Cast",
-            ErrorType::IndexOutOfBoundsError => "Index Out of Bounds",
-            ErrorType::FileError => "File Error",
-            ErrorType::NameError => "Name Error",
-            ErrorType::Traceback => "Traceback",
+            IllegalCharError => "Illegal Character",
+            RuntimeError => "Runtime Error",
+            IllegalArgumentError => "Illegal Argument",
+            SyntaxError => "Syntax Error",
+            IllegalCastError => "Illegal Cast",
+            IndexOutOfBoundsError => "Index Out of Bounds",
+            FileError => "File Error",
+            NameError => "Name Error",
+            Traceback => "Traceback",
         }
         .to_string()
     }

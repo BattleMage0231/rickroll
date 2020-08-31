@@ -1,5 +1,5 @@
 // collection of data types
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RickrollObject {
     Int(i32),
     Float(f32),
@@ -30,6 +30,24 @@ pub enum Operator {
     NotEquals,
     LParen,
     RParen,
+}
+
+impl Operator {
+    // checks if operator is unary
+    pub fn is_unary(&self) -> bool {
+        use Operator::*;
+        match self {
+            UnaryMinus | Not => true,
+            _ => false,
+        }
+    }
+}
+
+// rickroll token
+#[derive(Debug)]
+pub enum Token {
+    Value(RickrollObject),
+    Operator(Operator),
 }
 
 // language constants

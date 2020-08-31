@@ -1,28 +1,20 @@
 use crate::error::*;
 use crate::util::*;
 
+// special operator characters
 const SPECIAL: &str = "!&|<>=";
 
 #[derive(Debug)]
-pub enum Token {
-    Value(RickrollObject),
-    Operator(Operator),
-}
-
-#[derive(Debug)]
 pub struct Lexer {
-    raw: Vec<char>,
-    cur_chr: Option<char>,
+    raw: Vec<char>, // raw expression string
     ptr: usize,
 }
 
 impl Lexer {
     // makes a new lexer from the raw string
     pub fn new(string: String) -> Lexer {
-        let raw: Vec<char> = String::from(string.trim()).chars().collect();
         Lexer {
-            raw: raw.clone(),
-            cur_chr: if raw.len() > 0 { Some(raw[0]) } else { None },
+            raw: string.trim().chars().collect(),
             ptr: 0,
         }
     }
@@ -30,17 +22,18 @@ impl Lexer {
     // advances the ptr
     fn advance(&mut self) {
         self.ptr += 1;
-        self.cur_chr = if self.ptr < self.raw.len() {
-            Some(self.raw[self.ptr])
-        } else {
-            None
-        };
+    }
+
+    // whether lexer has more characters to parse
+    fn has_more(&self) -> bool {
+        self.ptr < self.raw.len()
     }
 
     // consume self after making tokens
     pub fn make_tokens(mut self) -> Result<Vec<Token>, Error> {
         let mut tokens: Vec<Token> = Vec::new();
         let mut paren_balance = 0;
+        // empty expression cannot be parsed
         if self.raw.is_empty() {
             return Err(Error::new(
                 ErrorType::SyntaxError,
@@ -48,18 +41,21 @@ impl Lexer {
                 None,
             ));
         }
-        while self.cur_chr.is_some() {
-            let mut chr = self.cur_chr.unwrap();
+        while self.ptr < self.raw.len() {
+            let mut chr = self.raw[self.ptr]; // cur char
+            // make number
             if chr.is_ascii_digit() {
                 let num = self.make_number()?;
                 tokens.push(num);
                 continue;
             }
+            // make variable/constant
             if chr.is_ascii_alphabetic() {
                 let var = self.make_variable()?;
                 tokens.push(var);
                 continue;
             }
+            // make special operator
             if SPECIAL.contains(chr) {
                 let operator = self.make_operator()?;
                 tokens.push(operator);
@@ -68,14 +64,16 @@ impl Lexer {
             // character literal
             if chr == '\'' {
                 self.advance();
-                if self.cur_chr.is_none() {
+                // expected more characters in expression
+                if !self.has_more() {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
                         "Trailing character literal",
                         None,
                     ));
                 }
-                let mut chrlit = self.cur_chr.unwrap();
+                let mut chrlit = self.raw[self.ptr]; // value of char literal
+                // empty char literal ('')
                 if chrlit == '\'' {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -83,30 +81,32 @@ impl Lexer {
                         None,
                     ));
                 }
+                // possible escape sequence
                 if chrlit == '\\' {
                     self.advance();
-                    if self.cur_chr.is_none() {
+                    if !self.has_more() {
                         return Err(Error::new(
                             ErrorType::IllegalCharError,
                             "Trailing character literal",
                             None,
                         ));
                     }
-                    chr = self.cur_chr.unwrap();
+                    chr = self.raw[self.ptr]; // cur char
                     chrlit = match chr {
-                        'n' => '\n',
-                        _ => chr,
+                        'n' => '\n', // new line
+                        _ => chr, // otherwise no escape sequence found, regular char
                     };
                 }
                 self.advance();
-                if self.cur_chr.is_none() {
+                if !self.has_more() {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
                         "Trailing character literal",
                         None,
                     ));
                 }
-                chr = self.cur_chr.unwrap();
+                // make sure last character closes off the literal
+                chr = self.raw[self.ptr];
                 if chr != '\'' {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -114,16 +114,20 @@ impl Lexer {
                         None,
                     ));
                 }
+                // push char value
                 tokens.push(Token::Value(RickrollObject::Char(chrlit)));
                 self.advance();
                 continue;
             }
             match chr {
+                // whitespace can be ignored
                 chr if chr.is_whitespace() => (),
                 '+' => tokens.push(Token::Operator(Operator::Add)),
+                // must differentiate between subtract and unary minus
                 '-' => {
-                    let mut token = Token::Operator(Operator::UnaryMinus);
+                    let mut token = Token::Operator(Operator::UnaryMinus); // unary minus default
                     if !tokens.is_empty() {
+                        // if last token was either int or float, it's subtract
                         match tokens.last().unwrap() {
                             Token::Value(obj) => match obj {
                                 RickrollObject::Int(_) | RickrollObject::Float(_) => {
@@ -175,14 +179,20 @@ impl Lexer {
         return Ok(tokens);
     }
 
+    // parses a number starting at self.ptr
     fn make_number(&mut self) -> Result<Token, Error> {
+        // number can either be integer or float
         let mut inum = 0_i32;
         let mut fnum = 0_f32;
+        // whether number is float
         let mut float = false;
+        // number of decimal digits
         let mut dig = 0_i32;
-        let mut chr = self.cur_chr.unwrap();
+        let mut chr = self.raw[self.ptr]; // cur char
         loop {
+            // '.' means number is floating point
             if chr == '.' {
+                // only one '.' can exist in a number
                 if float {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -190,24 +200,35 @@ impl Lexer {
                         None,
                     ));
                 }
+                // replace inum with fnum
                 float = true;
                 dig = 1;
                 fnum = inum as f32;
             } else {
+                // if float, must be in decimal digits
                 if float {
                     fnum += (chr.to_digit(10).unwrap() as f32) / ((10.0_f32).powi(dig));
                     dig += 1;
                 } else {
+                    // if int, must be units digit
                     inum *= 10;
                     inum += chr.to_digit(10).unwrap() as i32;
                 }
             }
             self.advance();
-            match self.cur_chr {
-                Some(x) if (x.is_ascii_digit() || x == '.') => chr = x,
-                _ => break,
+            // check if still part of number
+            if self.has_more() {
+                let cur = self.raw[self.ptr];
+                if cur.is_ascii_digit() || cur == '.' {
+                    chr = cur;
+                } else {
+                    break;
+                }
+            } else {
+                break;
             }
         }
+        // return float/int depending on value
         return Ok(Token::Value(if float {
             RickrollObject::Float(fnum)
         } else {
@@ -215,21 +236,31 @@ impl Lexer {
         }));
     }
 
+    // makes a variable/constant starting at ptr
     fn make_variable(&mut self) -> Result<Token, Error> {
         let mut varname = String::new();
-        let mut chr = self.cur_chr.unwrap();
+        let mut chr = self.raw[self.ptr];
         loop {
             varname.push(chr);
             self.advance();
-            match self.cur_chr {
-                Some(x) if (x.is_ascii_alphabetic() || x == '_') => chr = x,
-                _ => break,
+            if self.has_more() {
+                let cur = self.raw[self.ptr];
+                // can only be alphabetic or _
+                if cur.is_ascii_alphabetic() || cur == '_' {
+                    chr = cur;
+                } else {
+                    break;
+                }
+            } else {
+                break;
             }
         }
+        // check if var is a constant
         let res = from_constant(&varname);
         if res.is_some() {
             return Ok(Token::Value(res.unwrap()));
         }
+        // var/const not found
         return Err(Error::new(
             ErrorType::NameError,
             &format!("Variable {} not found", varname).to_string(),
@@ -237,27 +268,35 @@ impl Lexer {
         ));
     }
 
+    // makes a complex operator starting at ptr
     fn make_operator(&mut self) -> Result<Token, Error> {
         let mut opname = String::new();
-        let mut chr = self.cur_chr.unwrap();
+        let mut chr = self.raw[self.ptr];
         loop {
             opname.push(chr);
             self.advance();
-            match self.cur_chr {
-                Some(x) if SPECIAL.contains(x) => chr = x,
-                _ => break,
+            if self.has_more() {
+                let cur = self.raw[self.ptr];
+                if SPECIAL.contains(cur) {
+                    chr = cur;
+                } else {
+                    break;
+                }
+            } else {
+                break;
             }
         }
+        use Operator::*;
         return match &opname[..] {
-            "&&" => Ok(Token::Operator(Operator::And)),
-            "||" => Ok(Token::Operator(Operator::Or)),
-            ">" => Ok(Token::Operator(Operator::Greater)),
-            "<" => Ok(Token::Operator(Operator::Less)),
-            ">=" => Ok(Token::Operator(Operator::GreaterEquals)),
-            "<=" => Ok(Token::Operator(Operator::LessEquals)),
-            "==" => Ok(Token::Operator(Operator::Equals)),
-            "!" => Ok(Token::Operator(Operator::Not)),
-            "!=" => Ok(Token::Operator(Operator::NotEquals)),
+            "&&" => Ok(Token::Operator(And)),
+            "||" => Ok(Token::Operator(Or)),
+            ">" => Ok(Token::Operator(Greater)),
+            "<" => Ok(Token::Operator(Less)),
+            ">=" => Ok(Token::Operator(GreaterEquals)),
+            "<=" => Ok(Token::Operator(LessEquals)),
+            "==" => Ok(Token::Operator(Equals)),
+            "!" => Ok(Token::Operator(Not)),
+            "!=" => Ok(Token::Operator(NotEquals)),
             _ => Err(Error::new(
                 ErrorType::RuntimeError,
                 &format!("Operator {} not found", opname).to_string(),
