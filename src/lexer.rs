@@ -43,7 +43,7 @@ impl Lexer {
         }
         while self.ptr < self.raw.len() {
             let mut chr = self.raw[self.ptr]; // cur char
-            // make number
+                                              // make number
             if chr.is_ascii_digit() {
                 let num = self.make_number()?;
                 tokens.push(num);
@@ -73,7 +73,7 @@ impl Lexer {
                     ));
                 }
                 let mut chrlit = self.raw[self.ptr]; // value of char literal
-                // empty char literal ('')
+                                                     // empty char literal ('')
                 if chrlit == '\'' {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -94,7 +94,7 @@ impl Lexer {
                     chr = self.raw[self.ptr]; // cur char
                     chrlit = match chr {
                         'n' => '\n', // new line
-                        _ => chr, // otherwise no escape sequence found, regular char
+                        _ => chr,    // otherwise no escape sequence found, regular char
                     };
                 }
                 self.advance();
@@ -135,7 +135,12 @@ impl Lexer {
                                 }
                                 _ => (),
                             },
-                            _ => (),
+                            Token::Operator(op) => match op {
+                                Operator::RParen => {
+                                    token = Token::Operator(Operator::Subtract);
+                                }
+                                _ => (),
+                            },
                         }
                     }
                     tokens.push(token);
@@ -211,8 +216,27 @@ impl Lexer {
                     dig += 1;
                 } else {
                     // if int, must be units digit
-                    inum *= 10;
-                    inum += chr.to_digit(10).unwrap() as i32;
+                    match inum.checked_mul(10) {
+                        None => {
+                            return Err(Error::new(
+                                ErrorType::IllegalArgumentError,
+                                "Integer or float literal too large",
+                                None,
+                            ))
+                        }
+                        Some(x) => inum = x,
+                    }
+                    let curdig = chr.to_digit(10).unwrap() as i32;
+                    match inum.checked_add(curdig) {
+                        None => {
+                            return Err(Error::new(
+                                ErrorType::IllegalArgumentError,
+                                "Integer or float literal too large",
+                                None,
+                            ))
+                        }
+                        Some(x) => inum = x,
+                    }
                 }
             }
             self.advance();
@@ -295,6 +319,8 @@ impl Lexer {
             ">=" => Ok(Token::Operator(GreaterEquals)),
             "<=" => Ok(Token::Operator(LessEquals)),
             "==" => Ok(Token::Operator(Equals)),
+            // support only one "!" before an argument
+            // multuple "!" can be formatted as "! !"
             "!" => Ok(Token::Operator(Not)),
             "!=" => Ok(Token::Operator(NotEquals)),
             _ => Err(Error::new(

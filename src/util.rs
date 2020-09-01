@@ -10,7 +10,7 @@ pub enum RickrollObject {
 }
 
 // operators
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operator {
     ArrayAccess,
     Add,
@@ -44,7 +44,7 @@ impl Operator {
 }
 
 // rickroll token
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Value(RickrollObject),
     Operator(Operator),

@@ -18,8 +18,8 @@ pub fn precedence_of(op: &Operator) -> usize {
         Greater | Less | GreaterEquals | LessEquals | Equals | NotEquals => 3,
         Add | Subtract => 4,
         Multiply | Divide | Modulo => 5,
-        Not => 6,
-        ArrayAccess => 7,
+        ArrayAccess => 6,
+        Not => 7,
         UnaryMinus => 8,
         RParen => 9,
     };
@@ -117,7 +117,7 @@ pub fn eval_binary(
         Or => match (first, second) {
             (Bool(x), Bool(y)) => Ok(Bool(*x || *y)),
             _ => Err(err_binary("Or", first, second)),
-        }
+        },
         Greater => match (first, second) {
             (Int(x), Int(y)) => Ok(Bool(x > y)),
             (Float(x), Float(y)) => Ok(Bool(x > y)),
@@ -169,7 +169,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     ptr: usize,
     value_stack: Vec<RickrollObject>, // stack of values
-    op_stack: Vec<Operator>, // stack of operators
+    op_stack: Vec<Operator>,          // stack of operators
 }
 
 impl Parser {
@@ -191,29 +191,105 @@ impl Parser {
     }
 
     // evaluates all possible operations given that the last operator is op
-    fn pop(&self, op: &Operator) {
-        /* to be implemented */
+    // all operators are left-associative
+    fn pop(&mut self, op: &Operator) -> Result<(), Error> {
+        while !self.op_stack.is_empty()
+            && precedence_of(self.op_stack.last().unwrap()) >= precedence_of(op)
+        {
+            let top = self.op_stack.last().unwrap();
+            if top.is_unary() {
+                if self.value_stack.is_empty() {
+                    return Err(Error::new(
+                        ErrorType::IllegalArgumentError,
+                        "Not enough arguments",
+                        None,
+                    ));
+                }
+                let arg = self.value_stack.pop().unwrap();
+                self.value_stack.push(eval_unary(top, &arg)?);
+            } else {
+                if self.value_stack.len() < 2 {
+                    return Err(Error::new(
+                        ErrorType::IllegalArgumentError,
+                        "Not enough arguments",
+                        None,
+                    ));
+                }
+                let first = self.value_stack.pop().unwrap();
+                let second = self.value_stack.pop().unwrap();
+                self.value_stack.push(eval_binary(top, &second, &first)?);
+            }
+            self.op_stack.pop();
+        }
+        Ok(())
     }
 
     // evaluates all operations until there are no operators or a left parenthesis is reached
-    fn pop_all(&self) {
-        /* to be implemented */
+    fn pop_all(&mut self) -> Result<(), Error> {
+        while !self.op_stack.is_empty() {
+            let top = self.op_stack.pop().unwrap();
+            match top {
+                Operator::LParen => break,
+                _ => {
+                    if top.is_unary() {
+                        if self.value_stack.is_empty() {
+                            return Err(Error::new(
+                                ErrorType::IllegalArgumentError,
+                                "Not enough arguments",
+                                None,
+                            ));
+                        }
+                        let arg = self.value_stack.pop().unwrap();
+                        self.value_stack.push(eval_unary(&top, &arg)?);
+                    } else {
+                        if self.value_stack.len() < 2 {
+                            return Err(Error::new(
+                                ErrorType::IllegalArgumentError,
+                                "Not enough arguments",
+                                None,
+                            ));
+                        }
+                        let first = self.value_stack.pop().unwrap();
+                        let second = self.value_stack.pop().unwrap();
+                        self.value_stack.push(eval_binary(&top, &second, &first)?);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     // evaluates the expression
     pub fn eval(mut self) -> Result<RickrollObject, Error> {
         while self.has_more() {
-            let token = &self.tokens[self.ptr]; // reference to a Token object
+            let token = (&self.tokens)[self.ptr].clone(); // reference to a Token object
             match token {
                 Token::Value(obj) => self.value_stack.push(obj.clone()), // push to stack if value
-                Token::Operator(op) => self.pop(&op), // pop all possible if operator
+                Token::Operator(op) => {
+                    if let Operator::RParen = op {
+                        self.pop_all()?;
+                    } else if let Operator::LParen = op {
+                        self.op_stack.push(op.clone());
+                    } else {
+                        // unary operator => wait for binary operator to pop it
+                        if !op.is_unary() {
+                            self.pop(&op)?; // pop all possible if operator
+                        }
+                        self.op_stack.push(op.clone());
+                    }
+                }
             }
             self.advance();
         }
-        self.pop_all(); // pop all at the end
+        // try to pop all operations at the end
+        self.pop_all()?;
         // if something went wrong while evaluating the expression...
         if self.value_stack.len() != 1 || !self.op_stack.is_empty() {
-            return Err(Error::new(ErrorType::SyntaxError, "Illegal expression syntax", None));
+            return Err(Error::new(
+                ErrorType::SyntaxError,
+                "Illegal expression syntax",
+                None,
+            ));
         }
         // return a clone of the only value left in value_stack
         return Ok(self.value_stack.last().unwrap().clone());
