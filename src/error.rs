@@ -35,7 +35,10 @@ impl ErrorType {
 pub struct Error {
     err: ErrorType,
     desc: String,
-    line: Option<usize>, // line could not exist
+    // line could not exist
+    line: Option<usize>,
+    // child could not exist
+    child: Box<Option<Error>>,
 }
 
 impl Error {
@@ -51,6 +54,16 @@ impl Error {
             err,
             desc: String::from(desc),
             line,
+            child: Box::new(None),
+        }
+    }
+
+    pub fn traceback(child: Error, line: Option<usize>) -> Error {
+        Error {
+            err: ErrorType::Traceback,
+            desc: String::from(""),
+            line,
+            child: Box::new(Some(child)),
         }
     }
 }
@@ -58,14 +71,22 @@ impl Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut res = String::new();
+        // child if traceback
+        if self.child.is_some() {
+            // get previous error message
+            res += &(self.child.as_ref().as_ref().unwrap().to_string().clone())[..];
+            res += "\n";
+        }
         // error name
         res += &self.err.as_string()[..];
         // error line if exists
         if Option::is_some(&self.line) {
-            res = format!("{} on line {}", res, self.line.unwrap());
+            res = format!("{} on line {}", res, self.line.unwrap() + 1);
         }
-        // error description
-        res = format!("{}: {}", res, self.desc);
+        // error description if not traceback
+        if self.child.is_none() {
+            res = format!("{}: {}", res, self.desc);
+        }
         write!(f, "{}", res)
     }
 }
