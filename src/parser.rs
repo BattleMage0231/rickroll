@@ -295,3 +295,158 @@ impl Parser {
         return Ok(self.value_stack.last().unwrap().clone());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::Operator::*;
+    use crate::util::RickrollObject::*;
+    use Token::*;
+
+    // helper function to return string form of evaluated
+    fn get(tokens: Vec<Token>) -> String {
+        match Parser::new(tokens).eval() {
+            Ok(val) => format!("{}", val),
+            Err(err) => format!("{:?}", err),
+        }
+    }
+
+    // helper function to test whether the first expression evaluates to the second
+    fn assert_eqv(first: Vec<Token>, second: &str) {
+        assert_eq!(&get(first)[..], second);
+    }
+
+    // simple test cases
+    #[test]
+    fn simple() {
+        assert_eqv(vec![Value(Int(1)), Operator(Add), Value(Int(2))], "3");
+        assert_eqv(
+            vec![
+                Value(Int(1)),
+                Operator(Multiply),
+                Value(Int(2)),
+                Operator(Divide),
+                Value(Int(3)),
+                Operator(Add),
+                Value(Int(4)),
+            ],
+            "4",
+        );
+        assert_eqv(
+            vec![
+                Value(Int(1)),
+                Operator(Add),
+                Value(Int(2)),
+                Operator(GreaterEquals),
+                Value(Int(3)),
+                Operator(Or),
+                Value(Bool(false)),
+            ],
+            "TRUE",
+        );
+    }
+
+    // operator precedence and parenthesis
+    #[test]
+    fn precedence() {
+        assert_eqv(
+            vec![
+                Value(Int(3)),
+                Operator(Add),
+                Value(Int(2)),
+                Operator(Multiply),
+                Value(Int(5)),
+            ],
+            "13",
+        );
+        assert_eqv(
+            vec![
+                Operator(LParen),
+                Operator(LParen),
+                Value(Int(7)),
+                Operator(RParen),
+                Operator(RParen),
+                Operator(Multiply),
+                Operator(LParen),
+                Value(Int(4)),
+                Operator(Add),
+                Value(Int(2)),
+                Operator(RParen),
+            ],
+            "42",
+        );
+        assert_eqv(
+            vec![
+                Operator(LParen),
+                Value(Int(3)),
+                Operator(Add),
+                Value(Int(2)),
+                Operator(RParen),
+                Operator(Multiply),
+                Value(Int(5)),
+                Operator(Greater),
+                Value(Int(4)),
+                Operator(Or),
+                Value(Bool(true)),
+                Operator(And),
+                Value(Bool(false)),
+            ],
+            "TRUE",
+        );
+    }
+
+    // unary operators
+    #[test]
+    fn unary() {
+        assert_eqv(
+            vec![
+                Operator(Not),
+                Operator(Not),
+                Value(Bool(true)),
+                Operator(And),
+                Operator(Not),
+                Value(Bool(false)),
+            ],
+            "TRUE",
+        );
+        assert_eqv(
+            vec![
+                Value(Int(3)),
+                Operator(Subtract),
+                Operator(UnaryMinus),
+                Operator(LParen),
+                Operator(UnaryMinus),
+                Value(Int(4)),
+                Operator(RParen),
+            ],
+            "-1",
+        );
+    }
+
+    // things that should be errors
+    #[test]
+    fn error() {
+        assert_eqv(
+            vec![
+                Value(Int(1)),
+                Operator(Add),
+                Operator(Not),
+                Operator(LParen),
+                Value(Bool(true)),
+                Operator(Or),
+                Value(Bool(false)),
+                Operator(RParen)
+            ],
+            "Error { err: IllegalArgumentError, desc: \"Add is not defined for Int(1) and Bool(false)\", line: None }",
+        );
+        assert_eqv(
+            vec![
+                Operator(Add),
+                Value(Int(1)),
+                Operator(Multiply),
+                Value(Int(2)),
+            ],
+            "Error { err: IllegalArgumentError, desc: \"Not enough arguments\", line: None }",
+        );
+    }
+}
