@@ -10,16 +10,24 @@ use crate::util::*;
 #[derive(Debug, EnumIter)]
 pub enum Statement {
     Say,
+    Let,
+    Assign,
 }
 
 impl Statement {
     pub fn matches(&self, raw: &String) -> bool {
         lazy_static! {
+            // print
             static ref SAY: Regex = Regex::new("^Never gonna say .+$").unwrap();
+            // let + assign to var
+            static ref LET: Regex = Regex::new("^Never gonna let \\w+ down$").unwrap();
+            static ref ASSIGN: Regex = Regex::new("^Never gonna give \\w+ .+$").unwrap();
         }
         use Statement::*;
         return match self {
-            Say => &SAY,
+            Say => &(*SAY),
+            Let => &(*LET),
+            Assign => &(*ASSIGN),
         }
         .is_match(raw);
     }
@@ -102,7 +110,49 @@ impl Compiler {
                         let tokens = self.wrap_check(
                             Lexer::new(expr, self.global_scope.clone()).make_tokens(),
                         )?;
-                        compiled.push((self.ptr, Put(tokens)));
+                        // push Put instruction
+                        compiled.push((self.ptr + 1, Put(tokens)));
+                    }
+                    Statement::Let => {
+                        // ^Never gonna let \\w+ down$
+                        let varname = String::from(&curln[16..(curln.len() - 5)]);
+                        println!("debug new var: {}", varname);
+                        if self.global_scope.has_var(varname.clone()) {
+                            return Err(Error::new(
+                                ErrorType::NameError,
+                                &(format!(
+                                    "Variable {} already exists in the current scope",
+                                    varname
+                                ))[..],
+                                Some(self.ptr + 1),
+                            ));
+                        }
+                        self.global_scope.add_var(varname.clone());
+                        // push Let instruction
+                        compiled.push((self.ptr + 1, Instruction::Let(varname)));
+                    }
+                    Assign => {
+                        // ^Never gonna give \\w+ .+$
+                        let slice = String::from(&curln[17..]); // \\w .+
+                        match slice.find(' ') {
+                            Some(index) => {
+                                let varname = String::from(String::from(&slice[..index]).trim());
+                                let expr = String::from(&slice[(index + 1)..]);
+                                let tokens = self.wrap_check(
+                                    Lexer::new(expr, self.global_scope.clone()).make_tokens(),
+                                )?;
+                                println!("debug assign var: {} to {:?}", varname, tokens);
+                                // push Set instruction
+                                compiled.push((self.ptr + 1, Set(varname, tokens)));
+                            }
+                            None => {
+                                return Err(Error::new(
+                                    ErrorType::SyntaxError,
+                                    "Illegal statement",
+                                    Some(self.ptr + 1),
+                                ))
+                            }
+                        }
                     }
                 }
             }

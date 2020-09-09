@@ -94,6 +94,8 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
 pub enum Instruction {
     Put(Vec<Token>),
     End(),
+    Let(String),
+    Set(String, Vec<Token>),
 }
 
 // variable cache for a single block
