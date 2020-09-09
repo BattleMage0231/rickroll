@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 // collection of data types
 #[derive(Debug, Clone)]
 pub enum RickrollObject {
@@ -73,6 +75,7 @@ impl Operator {
 pub enum Token {
     Value(RickrollObject),
     Operator(Operator),
+    Variable(String),
 }
 
 // language constants
@@ -83,5 +86,107 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
         "UNDEFINED" => Some(RickrollObject::Undefined),
         "ARRAY" => Some(RickrollObject::Array(Vec::new())),
         _ => None,
+    }
+}
+
+// bytecode instruction
+#[derive(Debug)]
+pub enum Instruction {
+    Put(Vec<Token>),
+    End(),
+}
+
+// variable cache for a single block
+#[derive(Debug, Clone)]
+pub struct Context {
+    vars: HashMap<String, RickrollObject>,
+}
+
+impl Context {
+    pub fn new() -> Context {
+        Context {
+            vars: HashMap::new(),
+        }
+    }
+
+    pub fn set_var(&mut self, name: String, value: RickrollObject) {
+        self.vars.insert(name, value);
+    }
+
+    pub fn get_var(&mut self, name: String) -> Option<RickrollObject> {
+        if self.vars.contains_key(&name) {
+            return Some(self.vars.get(&name).unwrap().clone());
+        } else {
+            return None;
+        }
+    }
+
+    pub fn has_var(&self, name: String) -> bool {
+        self.vars.contains_key(&name)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Scope {
+    contexts: Vec<Context>,
+}
+
+impl Scope {
+    pub fn new() -> Scope {
+        Scope {
+            contexts: vec![Context::new()],
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.contexts.len()
+    }
+
+    pub fn push(&mut self, context: Context) {
+        self.contexts.push(context);
+    }
+
+    pub fn pop(&mut self) -> Context {
+        self.contexts
+            .pop()
+            .expect("Cannot pop context from empty scope")
+    }
+
+    // sets a variable in the scope
+    // does nothing if variable doesn't exist
+    pub fn set_var(&mut self, name: String, value: RickrollObject) {
+        for context in self.contexts.iter_mut().rev() {
+            if context.has_var(name.clone()) {
+                context.set_var(name, value);
+                return;
+            }
+        }
+    }
+
+    // gets the value of a variable in the scope
+    // returns None if variable doesn't exist
+    pub fn get_var(&mut self, name: String) -> Option<RickrollObject> {
+        for context in self.contexts.iter_mut().rev() {
+            if context.has_var(name.clone()) {
+                return Some(context.get_var(name).unwrap());
+            }
+        }
+        return None;
+    }
+
+    pub fn has_var(&self, name: String) -> bool {
+        for context in self.contexts.iter() {
+            if context.has_var(name.clone()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn add_var(&mut self, name: String) {
+        self.contexts
+            .last_mut()
+            .unwrap()
+            .set_var(name, RickrollObject::Undefined);
     }
 }

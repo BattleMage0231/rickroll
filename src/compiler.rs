@@ -1,17 +1,11 @@
 use lazy_static::lazy_static;
 use regex::Regex;
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter; 
+use strum_macros::EnumIter;
 
 use crate::error::*;
-use crate::util::*;
 use crate::lexer::*;
-
-#[derive(Debug)]
-pub enum Instruction {
-    Put(Vec<Token>),
-    End(),
-}
+use crate::util::*;
 
 #[derive(Debug, EnumIter)]
 pub enum Statement {
@@ -26,7 +20,8 @@ impl Statement {
         use Statement::*;
         return match self {
             Say => &SAY,
-        }.is_match(raw);
+        }
+        .is_match(raw);
     }
 
     pub fn match_statement(raw: &String) -> Option<Statement> {
@@ -34,7 +29,7 @@ impl Statement {
             if statement.matches(raw) {
                 return Some(statement);
             }
-        } 
+        }
         return None;
     }
 }
@@ -43,6 +38,7 @@ impl Statement {
 pub struct Compiler {
     ptr: usize,
     raw: Vec<String>,
+    global_scope: Scope,
 }
 
 impl Compiler {
@@ -62,7 +58,8 @@ impl Compiler {
                 }
                 res.push(cur);
                 res
-            }
+            },
+            global_scope: Scope::new(),
         }
     }
 
@@ -73,13 +70,15 @@ impl Compiler {
     // wraps a traceback around a possible error
     fn wrap_check<T>(&self, res: Result<T, Error>) -> Result<T, Error> {
         if let Err(error) = res {
-            return Err(Error::traceback(error, Some(self.ptr)));
+            return Err(Error::traceback(error, Some(self.ptr + 1)));
         }
         return res;
     }
 
-    pub fn compile(mut self) -> Result<Vec<Instruction>, Error> {
-        let mut compiled: Vec<Instruction> = Vec::new();
+    // Vec<(original line number, instruction)>
+    // instructions with no original line or expected error should have a line number of 0
+    pub fn compile(mut self) -> Result<Vec<(usize, Instruction)>, Error> {
+        let mut compiled: Vec<(usize, Instruction)> = Vec::new();
         while self.ptr < self.raw.len() {
             // try to match a statement
             let curln = self.raw[self.ptr].trim();
@@ -87,24 +86,30 @@ impl Compiler {
                 let res = Statement::match_statement(&String::from(curln));
                 // no statement matched
                 if res.is_none() {
-                    return Err(Error::new(ErrorType::SyntaxError, "Illegal statement", Some(self.ptr)));
+                    return Err(Error::new(
+                        ErrorType::SyntaxError,
+                        "Illegal statement",
+                        Some(self.ptr + 1),
+                    ));
                 }
                 // compile statement to bytecode
-                use Statement::*;
                 use Instruction::*;
+                use Statement::*;
                 match res.unwrap() {
                     Say => {
                         // ^Never gonna say .+$
                         let expr = String::from(&curln[16..]);
-                        let tokens = self.wrap_check(Lexer::new(expr).make_tokens())?;
-                        compiled.push(Put(tokens));
-                    },
-                }   
+                        let tokens = self.wrap_check(
+                            Lexer::new(expr, self.global_scope.clone()).make_tokens(),
+                        )?;
+                        compiled.push((self.ptr, Put(tokens)));
+                    }
+                }
             }
             // advance
             self.advance();
         }
-        compiled.push(Instruction::End());
+        compiled.push((0, Instruction::End()));
         return Ok(compiled);
     }
 }

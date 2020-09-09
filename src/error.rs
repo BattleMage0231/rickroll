@@ -73,15 +73,15 @@ impl std::fmt::Display for Error {
         let mut res = String::new();
         // child if traceback
         if self.child.is_some() {
-            // get previous error message
-            res += &(self.child.as_ref().as_ref().unwrap().to_string().clone())[..];
+            // get previous error message from Box<Option<Error>>
+            res += &(self.child.as_ref().as_ref().unwrap().to_string())[..];
             res += "\n";
         }
         // error name
         res += &self.err.as_string()[..];
         // error line if exists
-        if Option::is_some(&self.line) {
-            res = format!("{} on line {}", res, self.line.unwrap() + 1);
+        if self.line.is_some() {
+            res = format!("{} on line {}", res, self.line.unwrap());
         }
         // error description if not traceback
         if self.child.is_none() {

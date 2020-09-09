@@ -170,15 +170,17 @@ pub struct Parser {
     ptr: usize,
     value_stack: Vec<RickrollObject>, // stack of values
     op_stack: Vec<Operator>,          // stack of operators
+    scope: Scope,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Parser {
+    pub fn new(tokens: Vec<Token>, scope: Scope) -> Parser {
         Parser {
             tokens,
             ptr: 0,
             value_stack: Vec::new(),
             op_stack: Vec::new(),
+            scope,
         }
     }
 
@@ -278,6 +280,18 @@ impl Parser {
                         self.op_stack.push(op.clone());
                     }
                 }
+                Token::Variable(name) => {
+                    let value = self.scope.get_var(name.clone());
+                    if value.is_none() {
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &(format!("No such variable {}", name))[..],
+                            None,
+                        ));
+                    } else {
+                        self.value_stack.push(value.unwrap().clone());
+                    }
+                }
             }
             self.advance();
         }
@@ -305,7 +319,7 @@ mod tests {
 
     // helper function to return string form of evaluated
     fn get(tokens: Vec<Token>) -> String {
-        match Parser::new(tokens).eval() {
+        match Parser::new(tokens, Scope::new()).eval() {
             Ok(val) => format!("{}", val),
             Err(err) => format!("{:?}", err),
         }
@@ -437,7 +451,7 @@ mod tests {
                 Value(Bool(false)),
                 Operator(RParen)
             ],
-            "Error { err: IllegalArgumentError, desc: \"Add is not defined for Int(1) and Bool(false)\", line: None }",
+            "Error { err: IllegalArgumentError, desc: \"Add is not defined for Int(1) and Bool(false)\", line: None, child: None }",
         );
         assert_eqv(
             vec![
@@ -446,7 +460,7 @@ mod tests {
                 Operator(Multiply),
                 Value(Int(2)),
             ],
-            "Error { err: IllegalArgumentError, desc: \"Not enough arguments\", line: None }",
+            "Error { err: IllegalArgumentError, desc: \"Not enough arguments\", line: None, child: None }",
         );
     }
 }

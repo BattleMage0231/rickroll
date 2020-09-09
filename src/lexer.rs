@@ -8,14 +8,16 @@ const SPECIAL: &str = "!&|<>=";
 pub struct Lexer {
     raw: Vec<char>, // raw expression string
     ptr: usize,
+    scope: Scope,
 }
 
 impl Lexer {
     // makes a new lexer from the raw string
-    pub fn new(string: String) -> Lexer {
+    pub fn new(string: String, scope: Scope) -> Lexer {
         Lexer {
             raw: string.trim().chars().collect(),
             ptr: 0,
+            scope,
         }
     }
 
@@ -135,6 +137,7 @@ impl Lexer {
                                 }
                                 _ => (),
                             },
+                            Token::Variable(_) => token = Token::Operator(Operator::Subtract),
                             Token::Operator(op) => match op {
                                 Operator::RParen => {
                                     token = Token::Operator(Operator::Subtract);
@@ -284,6 +287,10 @@ impl Lexer {
         if res.is_some() {
             return Ok(Token::Value(res.unwrap()));
         }
+        // check context for possible variable
+        if self.scope.has_var(varname.clone()) {
+            return Ok(Token::Variable(varname));
+        }
         // var/const not found
         return Err(Error::new(
             ErrorType::NameError,
@@ -338,7 +345,7 @@ mod tests {
 
     // helper function to return string form of parsed
     fn get(expr: &str) -> String {
-        match Lexer::new(String::from(expr)).make_tokens() {
+        match Lexer::new(String::from(expr), Scope::new()).make_tokens() {
             Ok(tokens) => format!("{:?}", tokens),
             Err(err) => format!("{:?}", err),
         }
@@ -402,23 +409,23 @@ mod tests {
     fn error() {
         assert_eqv(
             "    ",
-            "Error { err: SyntaxError, desc: \"Unexpected end of statement\", line: None }",
+            "Error { err: SyntaxError, desc: \"Unexpected end of statement\", line: None, child: None }",
         );
         assert_eqv(
             "'a",
-            "Error { err: IllegalCharError, desc: \"Trailing character literal\", line: None }",
+            "Error { err: IllegalCharError, desc: \"Trailing character literal\", line: None, child: None }",
         );
         assert_eqv(
             "3 + (()()",
-            "Error { err: SyntaxError, desc: \"Unbalanced parenthesis\", line: None }",
+            "Error { err: SyntaxError, desc: \"Unbalanced parenthesis\", line: None, child: None }",
         );
         assert_eqv(
             "a += b ** cD",
-            "Error { err: NameError, desc: \"Variable a not found\", line: None }",
+            "Error { err: NameError, desc: \"Variable a not found\", line: None, child: None }",
         );
         assert_eqv(
             "'asdasdasdasdasd'",
-            "Error { err: IllegalCharError, desc: \"Too many characters in literal\", line: None }",
+            "Error { err: IllegalCharError, desc: \"Too many characters in literal\", line: None, child: None }",
         );
     }
 }
