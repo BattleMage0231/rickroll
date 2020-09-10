@@ -46,7 +46,7 @@ impl Statement {
 pub struct Compiler {
     ptr: usize,
     raw: Vec<String>,
-    global_scope: Scope,
+    scope: Scope,
 }
 
 impl Compiler {
@@ -67,7 +67,7 @@ impl Compiler {
                 res.push(cur);
                 res
             },
-            global_scope: Scope::new(),
+            scope: Scope::new(),
         }
     }
 
@@ -107,16 +107,15 @@ impl Compiler {
                     Say => {
                         // ^Never gonna say .+$
                         let expr = String::from(&curln[16..]);
-                        let tokens = self.wrap_check(
-                            Lexer::new(expr, self.global_scope.clone()).make_tokens(),
-                        )?;
+                        let tokens =
+                            self.wrap_check(Lexer::new(expr, self.scope.clone()).make_tokens())?;
                         // push Put instruction
                         compiled.push((self.ptr + 1, Put(tokens)));
                     }
                     Statement::Let => {
                         // ^Never gonna let \\w+ down$
                         let varname = String::from(&curln[16..(curln.len() - 5)]);
-                        if self.global_scope.has_var(varname.clone()) {
+                        if self.scope.has_var(varname.clone()) {
                             return Err(Error::new(
                                 ErrorType::NameError,
                                 &(format!(
@@ -126,7 +125,7 @@ impl Compiler {
                                 Some(self.ptr + 1),
                             ));
                         }
-                        self.global_scope.add_var(varname.clone());
+                        self.scope.add_var(varname.clone());
                         // push Let instruction
                         compiled.push((self.ptr + 1, Instruction::Let(varname)));
                     }
@@ -136,9 +135,16 @@ impl Compiler {
                         match slice.find(' ') {
                             Some(index) => {
                                 let varname = String::from(String::from(&slice[..index]).trim());
+                                if !self.scope.has_var(varname.clone()) {
+                                    return Err(Error::new(
+                                        ErrorType::NameError,
+                                        &(format!("Variable {} doesn't exist", varname))[..],
+                                        Some(self.ptr + 1),
+                                    ));
+                                }
                                 let expr = String::from(&slice[(index + 1)..]);
                                 let tokens = self.wrap_check(
-                                    Lexer::new(expr, self.global_scope.clone()).make_tokens(),
+                                    Lexer::new(expr, self.scope.clone()).make_tokens(),
                                 )?;
                                 // push Set instruction
                                 compiled.push((self.ptr + 1, Set(varname, tokens)));

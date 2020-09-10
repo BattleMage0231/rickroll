@@ -148,6 +148,10 @@ impl Scope {
         self.contexts.push(context);
     }
 
+    pub fn get_global(&mut self) -> &mut Context {
+        self.contexts.first_mut().unwrap()
+    }
+
     pub fn pop(&mut self) -> Context {
         self.contexts
             .pop()

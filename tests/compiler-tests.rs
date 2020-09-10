@@ -21,12 +21,13 @@ fn simple() {
     assert_eqv(
         "\
         Never gonna let a down
-        Never gonna give a 1 + 2
+        Never gonna give a 3
         Never gonna let b down
         Never gonna say a
         Never gonna say b
+        Never gonna say a + 3
         ",
-        "Ok([(1, Let(\"a\")), (2, Set(\"a\", [Value(Int(1)), Operator(Add), Value(Int(2))])), (3, Let(\"b\")), (4, Put([Variable(\"a\")])), (5, Put([Variable(\"b\")])), (0, End)])",
+        "Ok([(1, Let(\"a\")), (2, Set(\"a\", [Value(Int(3))])), (3, Let(\"b\")), (4, Put([Variable(\"a\")])), (5, Put([Variable(\"b\")])), (6, Put([Variable(\"a\"), Operator(Add), Value(Int(3))])), (0, End)])",
     );
 }
 
