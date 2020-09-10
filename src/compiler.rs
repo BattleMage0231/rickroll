@@ -116,7 +116,6 @@ impl Compiler {
                     Statement::Let => {
                         // ^Never gonna let \\w+ down$
                         let varname = String::from(&curln[16..(curln.len() - 5)]);
-                        println!("debug new var: {}", varname);
                         if self.global_scope.has_var(varname.clone()) {
                             return Err(Error::new(
                                 ErrorType::NameError,
@@ -141,7 +140,6 @@ impl Compiler {
                                 let tokens = self.wrap_check(
                                     Lexer::new(expr, self.global_scope.clone()).make_tokens(),
                                 )?;
-                                println!("debug assign var: {} to {:?}", varname, tokens);
                                 // push Set instruction
                                 compiled.push((self.ptr + 1, Set(varname, tokens)));
                             }

@@ -318,8 +318,8 @@ mod tests {
     use Token::*;
 
     // helper function to return string form of evaluated
-    fn get(tokens: Vec<Token>) -> String {
-        match Parser::new(tokens, Scope::new()).eval() {
+    fn get(tokens: Vec<Token>, scope: Scope) -> String {
+        match Parser::new(tokens, scope).eval() {
             Ok(val) => format!("{}", val),
             Err(err) => format!("{:?}", err),
         }
@@ -327,7 +327,11 @@ mod tests {
 
     // helper function to test whether the first expression evaluates to the second
     fn assert_eqv(first: Vec<Token>, second: &str) {
-        assert_eq!(&get(first)[..], second);
+        assert_eq!(&get(first, Scope::new())[..], second);
+    }
+
+    fn assert_eqv_scope(first: Vec<Token>, second: &str, scope: Scope) {
+        assert_eq!(&get(first, scope)[..], second);
     }
 
     // simple test cases
@@ -357,6 +361,25 @@ mod tests {
                 Value(Bool(false)),
             ],
             "TRUE",
+        );
+        // variables test
+        assert_eqv_scope(
+            vec![
+                Variable(String::from("a")),
+                Operator(Add),
+                Value(Int(3)),
+                Operator(Multiply),
+                Variable(String::from("xxx")),
+            ],
+            "15",
+            {
+                let mut s = Scope::new();
+                s.add_var(String::from("a"));
+                s.add_var(String::from("xxx"));
+                s.set_var(String::from("a"), Int(3));
+                s.set_var(String::from("xxx"), Float(4.0));
+                s
+            },
         );
     }
 

@@ -351,7 +351,7 @@ mod tests {
         }
     }
 
-    // helper function to test whether the first expression parses to the second
+    // helper functions to test whether the first expression parses to the second
     fn assert_eqv(first: &str, second: &str) {
         assert_eq!(&get(first)[..], second);
     }
