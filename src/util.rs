@@ -92,10 +92,22 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
 // bytecode instruction
 #[derive(Debug)]
 pub enum Instruction {
+    // print
     Put(Vec<Token>),
+    // end program
     End(),
+    // let and set variables
     Let(String),
     Set(String, Vec<Token>),
+    // jump and conditionally jump
+    Jmp(usize),
+    Jmpif(Vec<Token>, usize),
+    // push and pop context
+    Pctx(),
+    Dctx(),
+    // temporary instruction used to allocate
+    // instructions before their existence
+    Tmp(),
 }
 
 // variable cache for a single block

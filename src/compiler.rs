@@ -12,6 +12,9 @@ pub enum Statement {
     Say,
     Let,
     Assign,
+    Check,
+    WhileEnd,
+    IfEnd,
 }
 
 impl Statement {
@@ -22,12 +25,19 @@ impl Statement {
             // let + assign to var
             static ref LET: Regex = Regex::new("^Never gonna let \\w+ down$").unwrap();
             static ref ASSIGN: Regex = Regex::new("^Never gonna give \\w+ .+$").unwrap();
+            // check, if, and while
+            static ref CHECK: Regex = Regex::new("^Inside we both know .+$").unwrap();
+            static ref WHILE_END: Regex = Regex::new("^We know the game and we\'re gonna play it$").unwrap();
+            static ref IF_END: Regex = Regex::new("^Your heart\'s been aching but you\'re too shy to say it$").unwrap();
         }
         use Statement::*;
         return match self {
             Say => &(*SAY),
             Let => &(*LET),
             Assign => &(*ASSIGN),
+            Check => &(*CHECK),
+            WhileEnd => &(*WHILE_END),
+            IfEnd => &(*IF_END),
         }
         .is_match(raw);
     }
@@ -47,6 +57,7 @@ pub struct Compiler {
     ptr: usize,
     raw: Vec<String>,
     scope: Scope,
+    check_stack: Vec<usize>, // remember lines following those that have check statements
 }
 
 impl Compiler {
@@ -68,6 +79,7 @@ impl Compiler {
                 res
             },
             scope: Scope::new(),
+            check_stack: Vec::new(),
         }
     }
 
@@ -158,10 +170,77 @@ impl Compiler {
                             }
                         }
                     }
+                    /*
+                     * If compiles to
+                     * 0 jmpif [TRUE] 2 ; if true, jump to start of code
+                     * 1 jmp 5          ; if not true, jump to end of if
+                     * 2 pctx           ; push context
+                     * 3 put 0
+                     * 4 dctx           ; delete context
+                     * 5 end
+                     * 
+                     * While compiles to
+                     * 0 jmpif [TRUE] 2 ; if true, jump to start of code
+                     * 1 jmp 6          ; if not true, jump to end of loop
+                     * 2 pctx           ; push context
+                     * 3 put 0
+                     * 4 dctx           ; delete context
+                     * 5 jmp 0          ; jump back to loop start
+                     * 6 end
+                     */
+                    Check => {
+                        // ^Inside we both know .+$
+                        let expr = String::from(&curln[20..]);
+                        let tokens =
+                            self.wrap_check(Lexer::new(expr, self.scope.clone()).make_tokens())?;
+                        // skip the next line if tokens evaluates to true
+                        compiled.push((self.ptr + 1, Jmpif(tokens, compiled.len() + 2)));
+                        // jmp to end of loop/if
+                        // since we don't know where it is yet, put a temp and remember its index
+                        self.check_stack.push(compiled.len());
+                        compiled.push((self.ptr + 1, Tmp()));
+                        // push new context
+                        compiled.push((self.ptr + 1, Pctx()));
+                    }
+                    WhileEnd => {
+                        // ^We know the game and we\'re gonna play it$
+                        if self.check_stack.is_empty() {
+                            return Err(Error::new(
+                                ErrorType::SyntaxError,
+                                "Mismatched while or if end",
+                                Some(self.ptr + 1),
+                            ));
+                        }
+                        compiled.push((self.ptr + 1, Dctx())); // pop top context
+                        let check_top = self.check_stack.pop().unwrap();
+                        compiled.push((self.ptr + 1, Jmp(check_top - 1))); // back to the jmpif instruction
+                        // push jmp to instruction at top of check stack
+                        compiled[check_top].1 = Jmp(compiled.len());
+                    }
+                    IfEnd => {
+                        // ^Your heart\'s been aching but you\'re too shy to say it$
+                        if self.check_stack.is_empty() {
+                            return Err(Error::new(
+                                ErrorType::SyntaxError,
+                                "Mismatched while or if end",
+                                Some(self.ptr + 1),
+                            ));
+                        }
+                        compiled.push((self.ptr + 1, Dctx())); // pop top context
+                        compiled[self.check_stack.pop().unwrap()].1 = Jmp(compiled.len()); // fill jmp
+                    }
                 }
             }
             // advance
             self.advance();
+        }
+        // if check stack isn't empty
+        if !self.check_stack.is_empty() {
+            return Err(Error::new(
+                ErrorType::SyntaxError,
+                "Mismatched while or if start",
+                Some(compiled[self.check_stack.pop().unwrap()].0),
+            ));
         }
         compiled.push((0, Instruction::End()));
         return Ok(compiled);

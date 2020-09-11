@@ -7,8 +7,8 @@ use std::io::{BufRead, Write};
 #[derive(Debug)]
 pub struct Interpreter {
     ptr: usize,
-    bytecode: Vec<(usize, Instruction)>,
-    scope: Scope, // global scope -> scope1... -> current scope
+    bytecode: Vec<(usize, Instruction)>, // Vec<(original line, Instruction)>
+    scope: Scope,                        // global scope -> scope1... -> current scope
 }
 
 impl Interpreter {
@@ -66,6 +66,37 @@ impl Interpreter {
                 }
                 End() => {
                     return Ok(RickrollObject::Undefined);
+                }
+                Jmp(dest) => {
+                    self.ptr = *dest;
+                    continue; // do not advance()
+                }
+                Jmpif(tokens, dest) => {
+                    // jump??
+                    let val = self.eval(tokens.clone())?;
+                    let jump = match val {
+                        RickrollObject::Bool(x) => x,
+                        _ => {
+                            return Err(Error::new(
+                                ErrorType::IllegalArgumentError,
+                                "Unexpected non-boolean argument",
+                                Some(*line),
+                            ))
+                        }
+                    };
+                    if jump {
+                        self.ptr = *dest;
+                        continue; // do not advance()
+                    }
+                }
+                Pctx() => {
+                    self.scope.push(Context::new());
+                }
+                Dctx() => {
+                    self.scope.pop();
+                }
+                Tmp() => {
+                    panic!("Unexpected Tmp() on line {}", self.ptr);
                 }
             }
             self.advance();

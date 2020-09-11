@@ -58,6 +58,95 @@ fn simple() {
     );
 }
 
+// if and while
+#[test]
+fn check() {
+    assert_eqv(
+        vec![
+            (1, Let(String::from("n"))),
+            (2, Set(String::from("n"), vec![Value(Int(10))])),
+            (3, Let(String::from("first"))),
+            (4, Let(String::from("second"))),
+            (5, Set(String::from("first"), vec![Value(Int(0))])),
+            (6, Set(String::from("second"), vec![Value(Int(1))])),
+            (7, Put(vec![Variable(String::from("second"))])),
+            (
+                8,
+                Jmpif(
+                    vec![
+                        Variable(String::from("n")),
+                        Operator(NotEquals),
+                        Value(Int(0)),
+                    ],
+                    9,
+                ),
+            ),
+            (8, Jmp(18)),
+            (8, Pctx()),
+            (9, Let(String::from("sum"))),
+            (
+                10,
+                Set(
+                    String::from("sum"),
+                    vec![
+                        Variable(String::from("first")),
+                        Operator(Add),
+                        Variable(String::from("second")),
+                    ],
+                ),
+            ),
+            (11, Put(vec![Variable(String::from("sum"))])),
+            (
+                12,
+                Set(
+                    String::from("first"),
+                    vec![Variable(String::from("second"))],
+                ),
+            ),
+            (
+                13,
+                Set(String::from("second"), vec![Variable(String::from("sum"))]),
+            ),
+            (
+                14,
+                Set(
+                    String::from("n"),
+                    vec![
+                        Variable(String::from("n")),
+                        Operator(Subtract),
+                        Value(Int(1)),
+                    ],
+                ),
+            ),
+            (15, Dctx()),
+            (15, Jmp(7)),
+            (0, End()),
+        ],
+        "",
+        "1\n1\n2\n3\n5\n8\n13\n21\n34\n55\n89\n",
+    );
+    assert_eqv(
+        vec![
+            (1, Let(String::from("a"))),
+            (2, Set(String::from("a"), vec![Value(Int(5))])),
+            (
+                3,
+                Jmpif(
+                    vec![Variable(String::from("a")), Operator(Equals), Value(Int(5))],
+                    4,
+                ),
+            ),
+            (3, Jmp(7)),
+            (3, Pctx()),
+            (4, Put(vec![Value(Bool(true))])),
+            (5, Dctx()),
+            (0, End()),
+        ],
+        "",
+        "TRUE\n",
+    );
+}
+
 // should err
 #[test]
 fn error() {
@@ -68,4 +157,12 @@ fn error() {
         "",
         "Error { err: Traceback, desc: \"\", line: Some(1), child: Some(Error { err: IllegalArgumentError, desc: \"Not enough arguments\", line: None, child: None }) }",
     );
+    assert_eqv(
+        vec![
+            (1, Jmpif(vec![Value(Int(5))], 2)),
+            (2, End()),
+        ],
+        "",
+        "Error { err: IllegalArgumentError, desc: \"Unexpected non-boolean argument\", line: Some(1), child: None }",
+    )
 }
