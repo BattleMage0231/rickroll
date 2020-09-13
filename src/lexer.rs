@@ -9,6 +9,7 @@ pub struct Lexer {
     raw: Vec<char>, // raw expression string
     ptr: usize,
     scope: Scope,
+    tokens: Vec<Token>,
 }
 
 impl Lexer {
@@ -18,6 +19,7 @@ impl Lexer {
             raw: string.trim().chars().collect(),
             ptr: 0,
             scope,
+            tokens: Vec::new(),
         }
     }
 
@@ -33,7 +35,6 @@ impl Lexer {
 
     // consume self after making tokens
     pub fn make_tokens(mut self) -> Result<Vec<Token>, Error> {
-        let mut tokens: Vec<Token> = Vec::new();
         let mut paren_balance = 0;
         // empty expression cannot be parsed
         if self.raw.is_empty() {
@@ -48,19 +49,19 @@ impl Lexer {
                                               // make number
             if chr.is_ascii_digit() {
                 let num = self.make_number()?;
-                tokens.push(num);
+                self.tokens.push(num);
                 continue;
             }
             // make variable/constant
             if chr.is_ascii_alphabetic() {
                 let var = self.make_variable()?;
-                tokens.push(var);
+                self.tokens.push(var);
                 continue;
             }
             // make special operator
             if SPECIAL.contains(chr) {
                 let operator = self.make_operator()?;
-                tokens.push(operator);
+                self.tokens.push(operator);
                 continue;
             }
             // character literal
@@ -117,20 +118,20 @@ impl Lexer {
                     ));
                 }
                 // push char value
-                tokens.push(Token::Value(RickrollObject::Char(chrlit)));
+                self.tokens.push(Token::Value(RickrollObject::Char(chrlit)));
                 self.advance();
                 continue;
             }
             match chr {
                 // whitespace can be ignored
                 chr if chr.is_whitespace() => (),
-                '+' => tokens.push(Token::Operator(Operator::Add)),
+                '+' => self.tokens.push(Token::Operator(Operator::Add)),
                 // must differentiate between subtract and unary minus
                 '-' => {
                     let mut token = Token::Operator(Operator::UnaryMinus); // unary minus default
-                    if !tokens.is_empty() {
+                    if !self.tokens.is_empty() {
                         // if last token was either int or float, it's subtract
-                        match tokens.last().unwrap() {
+                        match self.tokens.last().unwrap() {
                             Token::Value(obj) => match obj {
                                 RickrollObject::Int(_) | RickrollObject::Float(_) => {
                                     token = Token::Operator(Operator::Subtract);
@@ -146,17 +147,17 @@ impl Lexer {
                             },
                         }
                     }
-                    tokens.push(token);
+                    self.tokens.push(token);
                 }
-                '*' => tokens.push(Token::Operator(Operator::Multiply)),
-                '/' => tokens.push(Token::Operator(Operator::Divide)),
-                '%' => tokens.push(Token::Operator(Operator::Modulo)),
+                '*' => self.tokens.push(Token::Operator(Operator::Multiply)),
+                '/' => self.tokens.push(Token::Operator(Operator::Divide)),
+                '%' => self.tokens.push(Token::Operator(Operator::Modulo)),
                 '(' => {
-                    tokens.push(Token::Operator(Operator::LParen));
+                    self.tokens.push(Token::Operator(Operator::LParen));
                     paren_balance += 1;
                 }
                 ')' => {
-                    tokens.push(Token::Operator(Operator::RParen));
+                    self.tokens.push(Token::Operator(Operator::RParen));
                     paren_balance -= 1;
                     if paren_balance < 0 {
                         return Err(Error::new(
@@ -166,7 +167,7 @@ impl Lexer {
                         ));
                     }
                 }
-                ':' => tokens.push(Token::Operator(Operator::ArrayAccess)),
+                ':' => self.tokens.push(Token::Operator(Operator::ArrayAccess)),
                 _ => {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -184,7 +185,7 @@ impl Lexer {
                 None,
             ));
         }
-        return Ok(tokens);
+        return Ok(self.tokens);
     }
 
     // parses a number starting at self.ptr
