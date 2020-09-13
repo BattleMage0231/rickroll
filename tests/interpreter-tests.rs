@@ -1,4 +1,5 @@
 use rickroll::interpreter::*;
+use rickroll::util::Bytecode;
 
 use rickroll::util::{
     Instruction::{self, *},
@@ -11,7 +12,8 @@ use rickroll::util::{
 fn get(s: Vec<(usize, Instruction)>, stdout: Vec<u8>, stdin: String) -> String {
     let mut stdout = stdout;
     use std::io::BufReader;
-    let res = Interpreter::new(s).run(&mut stdout, &mut BufReader::new(stdin.as_bytes()));
+    let res =
+        Interpreter::new(Bytecode::from(s)).run(&mut stdout, &mut BufReader::new(stdin.as_bytes()));
     return match res {
         Ok(_) => String::from_utf8(stdout).unwrap(),
         Err(err) => String::from(format!("{:?}", err)),

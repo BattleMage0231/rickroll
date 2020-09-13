@@ -7,12 +7,12 @@ use std::io::{BufRead, Write};
 #[derive(Debug)]
 pub struct Interpreter {
     ptr: usize,
-    bytecode: Vec<(usize, Instruction)>, // Vec<(original line, Instruction)>
-    scope: Scope,                        // global scope -> scope1... -> current scope
+    bytecode: Bytecode,
+    scope: Scope, // global scope -> scope1... -> current scope
 }
 
 impl Interpreter {
-    pub fn new(bytecode: Vec<(usize, Instruction)>) -> Interpreter {
+    pub fn new(bytecode: Bytecode) -> Interpreter {
         Interpreter {
             ptr: 0,
             bytecode,
@@ -31,7 +31,10 @@ impl Interpreter {
     // wraps a traceback around a possible error
     fn wrap_check<T>(&self, res: Result<T, Error>) -> Result<T, Error> {
         if let Err(error) = res {
-            return Err(Error::traceback(error, Some(self.bytecode[self.ptr].0)));
+            return Err(Error::traceback(
+                error,
+                Some(self.bytecode.debug_line(self.ptr)),
+            ));
         }
         return res;
     }
@@ -50,7 +53,7 @@ impl Interpreter {
         R: BufRead,
     {
         while self.has_more() {
-            let (line, opcode) = &self.bytecode[self.ptr];
+            let opcode = &self.bytecode[self.ptr];
             use Instruction::*;
             match opcode {
                 Put(tokens) => {
@@ -80,7 +83,7 @@ impl Interpreter {
                             return Err(Error::new(
                                 ErrorType::IllegalArgumentError,
                                 "Unexpected non-boolean argument",
-                                Some(*line),
+                                Some(self.bytecode.debug_line(self.ptr)),
                             ))
                         }
                     };

@@ -16,7 +16,7 @@ fn simple() {
         Never gonna say 1 + 2
         Never gonna say 3 > 4
         ",
-        "Ok([(1, Put([Value(Int(1)), Operator(Add), Value(Int(2))])), (2, Put([Value(Int(3)), Operator(Greater), Value(Int(4))])), (0, End)])",
+        "Ok(Bytecode { instructions: [Put([Value(Int(1)), Operator(Add), Value(Int(2))]), Put([Value(Int(3)), Operator(Greater), Value(Int(4))]), End], debug_lines: [1, 2, 0], alloc_stack: [] })",
     );
     assert_eqv(
         "\
@@ -27,7 +27,7 @@ fn simple() {
         Never gonna say b
         Never gonna say a + 3
         ",
-        "Ok([(1, Let(\"a\")), (2, Set(\"a\", [Value(Int(3))])), (3, Let(\"b\")), (4, Put([Variable(\"a\")])), (5, Put([Variable(\"b\")])), (6, Put([Variable(\"a\"), Operator(Add), Value(Int(3))])), (0, End)])",
+        "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(3))]), Let(\"b\"), Put([Variable(\"a\")]), Put([Variable(\"b\")]), Put([Variable(\"a\"), Operator(Add), Value(Int(3))]), End], debug_lines: [1, 2, 3, 4, 5, 6, 0], alloc_stack: [] })",
     );
 }
 
@@ -52,7 +52,7 @@ fn check() {
             Never gonna give n n - 1
         We know the game and we're gonna play it
         ",
-        "Ok([(1, Let(\"n\")), (2, Set(\"n\", [Value(Int(10))])), (3, Let(\"first\")), (4, Let(\"second\")), (5, Set(\"first\", [Value(Int(0))])), (6, Set(\"second\", [Value(Int(1))])), (7, Put([Variable(\"second\")])), (8, Jmpif([Variable(\"n\"), Operator(NotEquals), Value(Int(0))], 9)), (8, Jmp(18)), (8, Pctx), (9, Let(\"sum\")), (10, Set(\"sum\", [Variable(\"first\"), Operator(Add), Variable(\"second\")])), (11, Put([Variable(\"sum\")])), (12, Set(\"first\", [Variable(\"second\")])), (13, Set(\"second\", [Variable(\"sum\")])), (14, Set(\"n\", [Variable(\"n\"), Operator(Subtract), Value(Int(1))])), (15, Dctx), (15, Jmp(7)), (0, End)])",
+        "Ok(Bytecode { instructions: [Let(\"n\"), Set(\"n\", [Value(Int(10))]), Let(\"first\"), Let(\"second\"), Set(\"first\", [Value(Int(0))]), Set(\"second\", [Value(Int(1))]), Put([Variable(\"second\")]), Jmpif([Variable(\"n\"), Operator(NotEquals), Value(Int(0))], 9), Jmp(18), Pctx, Let(\"sum\"), Set(\"sum\", [Variable(\"first\"), Operator(Add), Variable(\"second\")]), Put([Variable(\"sum\")]), Set(\"first\", [Variable(\"second\")]), Set(\"second\", [Variable(\"sum\")]), Set(\"n\", [Variable(\"n\"), Operator(Subtract), Value(Int(1))]), Dctx, Jmp(7), End], debug_lines: [1, 2, 3, 4, 5, 6, 7, 8, 8, 8, 9, 10, 11, 12, 13, 14, 15, 15, 0], alloc_stack: [] })",
     );
     assert_eqv(
         "\
@@ -62,7 +62,7 @@ fn check() {
             Never gonna say TRUE
         Your heart's been aching but you're too shy to say it
         ",
-        "Ok([(1, Let(\"a\")), (2, Set(\"a\", [Value(Int(5))])), (3, Jmpif([Variable(\"a\"), Operator(Equals), Value(Int(5))], 4)), (3, Jmp(7)), (3, Pctx), (4, Put([Value(Bool(true))])), (5, Dctx), (0, End)])",
+        "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(5))]), Jmpif([Variable(\"a\"), Operator(Equals), Value(Int(5))], 4), Jmp(7), Pctx, Put([Value(Bool(true))]), Dctx, End], debug_lines: [1, 2, 3, 3, 3, 4, 5, 0], alloc_stack: [] })",
     );
 }
 

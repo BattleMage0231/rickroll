@@ -97,8 +97,8 @@ impl Compiler {
 
     // Vec<(original line number, instruction)>
     // instructions with no original line or expected error should have a line number of 0
-    pub fn compile(mut self) -> Result<Vec<(usize, Instruction)>, Error> {
-        let mut compiled: Vec<(usize, Instruction)> = Vec::new();
+    pub fn compile(mut self) -> Result<Bytecode, Error> {
+        let mut compiled: Bytecode = Bytecode::new();
         while self.ptr < self.raw.len() {
             // try to match a statement
             let curln = self.raw[self.ptr].trim();
@@ -122,7 +122,7 @@ impl Compiler {
                         let tokens =
                             self.wrap_check(Lexer::new(expr, self.scope.clone()).make_tokens())?;
                         // push Put instruction
-                        compiled.push((self.ptr + 1, Put(tokens)));
+                        compiled.push(Put(tokens), self.ptr + 1);
                     }
                     Statement::Let => {
                         // ^Never gonna let \\w+ down$
@@ -139,7 +139,7 @@ impl Compiler {
                         }
                         self.scope.add_var(varname.clone());
                         // push Let instruction
-                        compiled.push((self.ptr + 1, Instruction::Let(varname)));
+                        compiled.push(Instruction::Let(varname), self.ptr + 1);
                     }
                     Assign => {
                         // ^Never gonna give \\w+ .+$
@@ -159,7 +159,7 @@ impl Compiler {
                                     Lexer::new(expr, self.scope.clone()).make_tokens(),
                                 )?;
                                 // push Set instruction
-                                compiled.push((self.ptr + 1, Set(varname, tokens)));
+                                compiled.push(Set(varname, tokens), self.ptr + 1);
                             }
                             None => {
                                 return Err(Error::new(
@@ -178,7 +178,7 @@ impl Compiler {
                      * 3 put 0
                      * 4 dctx           ; delete context
                      * 5 end
-                     * 
+                     *
                      * While compiles to
                      * 0 jmpif [TRUE] 2 ; if true, jump to start of code
                      * 1 jmp 6          ; if not true, jump to end of loop
@@ -194,40 +194,42 @@ impl Compiler {
                         let tokens =
                             self.wrap_check(Lexer::new(expr, self.scope.clone()).make_tokens())?;
                         // skip the next line if tokens evaluates to true
-                        compiled.push((self.ptr + 1, Jmpif(tokens, compiled.len() + 2)));
+                        compiled.push(Jmpif(tokens, compiled.len() + 2), self.ptr + 1);
                         // jmp to end of loop/if
-                        // since we don't know where it is yet, put a temp and remember its index
-                        self.check_stack.push(compiled.len());
-                        compiled.push((self.ptr + 1, Tmp()));
+                        // since we don't know where it is yet, put a tmp and remember its index
+                        let tmp_index = compiled.alloc_tmp(self.ptr + 1);
+                        self.check_stack.push(tmp_index);
                         // push new context
-                        compiled.push((self.ptr + 1, Pctx()));
+                        compiled.push(Pctx(), self.ptr + 1);
                     }
                     WhileEnd => {
                         // ^We know the game and we\'re gonna play it$
-                        if self.check_stack.is_empty() {
+                        if self.check_stack.is_empty() || !compiled.has_tmp() {
                             return Err(Error::new(
                                 ErrorType::SyntaxError,
                                 "Mismatched while or if end",
                                 Some(self.ptr + 1),
                             ));
                         }
-                        compiled.push((self.ptr + 1, Dctx())); // pop top context
+                        compiled.push(Dctx(), self.ptr + 1); // pop top context
                         let check_top = self.check_stack.pop().unwrap();
-                        compiled.push((self.ptr + 1, Jmp(check_top - 1))); // back to the jmpif instruction
+                        // jump back to the jmpif instruction
+                        compiled.push(Jmp(check_top - 1), self.ptr + 1);
                         // push jmp to instruction at top of check stack
-                        compiled[check_top].1 = Jmp(compiled.len());
+                        compiled.free_top(Jmp(compiled.len()));
                     }
                     IfEnd => {
                         // ^Your heart\'s been aching but you\'re too shy to say it$
-                        if self.check_stack.is_empty() {
+                        if self.check_stack.is_empty() || !compiled.has_tmp() {
                             return Err(Error::new(
                                 ErrorType::SyntaxError,
                                 "Mismatched while or if end",
                                 Some(self.ptr + 1),
                             ));
                         }
-                        compiled.push((self.ptr + 1, Dctx())); // pop top context
-                        compiled[self.check_stack.pop().unwrap()].1 = Jmp(compiled.len()); // fill jmp
+                        compiled.push(Dctx(), self.ptr + 1); // pop top context
+                        self.check_stack.pop();
+                        compiled.free_top(Jmp(compiled.len())); // fill jmp
                     }
                 }
             }
@@ -235,14 +237,14 @@ impl Compiler {
             self.advance();
         }
         // if check stack isn't empty
-        if !self.check_stack.is_empty() {
+        if !self.check_stack.is_empty() || compiled.has_tmp() {
             return Err(Error::new(
                 ErrorType::SyntaxError,
                 "Mismatched while or if start",
-                Some(compiled[self.check_stack.pop().unwrap()].0),
+                Some(compiled.debug_line(self.check_stack.pop().unwrap())),
             ));
         }
-        compiled.push((0, Instruction::End()));
+        compiled.push(Instruction::End(), 0);
         return Ok(compiled);
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::{Index, IndexMut};
 
 // collection of data types
 #[derive(Debug, Clone)]
@@ -90,7 +91,7 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
 }
 
 // bytecode instruction
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     // print
     Put(Vec<Token>),
@@ -108,6 +109,92 @@ pub enum Instruction {
     // temporary instruction used to allocate
     // instructions before their existence
     Tmp(),
+}
+
+// bytecode definition
+#[derive(Debug)]
+pub struct Bytecode {
+    instructions: Vec<Instruction>,
+    debug_lines: Vec<usize>,
+    alloc_stack: Vec<usize>,
+    /*
+     * function: HashMap<String, usize>,
+     * file: String,
+     * imports: HashMap<String, Bytecode>,
+     */
+}
+
+impl Bytecode {
+    pub fn new() -> Bytecode {
+        Bytecode {
+            instructions: Vec::new(),
+            debug_lines: Vec::new(),
+            alloc_stack: Vec::new(),
+        }
+    }
+
+    pub fn from(vec: Vec<(usize, Instruction)>) -> Bytecode {
+        let mut bytecode = Bytecode::new();
+        for (line, instruction) in vec {
+            bytecode.push(instruction, line);
+        }
+        return bytecode;
+    }
+
+    pub fn to_vec(&self) -> Vec<(usize, Instruction)> {
+        let mut res: Vec<(usize, Instruction)> = Vec::new();
+        for i in 0..self.len() {
+            res.push((self.debug_lines[i], self.instructions[i].clone()));
+        }
+        return res;
+    }
+
+    pub fn debug_line(&self, index: usize) -> usize {
+        self.debug_lines[index]
+    }
+
+    pub fn len(&self) -> usize {
+        self.instructions.len()
+    }
+
+    pub fn push(&mut self, instruction: Instruction, orig_line: usize) {
+        self.instructions.push(instruction);
+        self.debug_lines.push(orig_line);
+    }
+
+    pub fn has_tmp(&self) -> bool {
+        !self.alloc_stack.is_empty()
+    }
+
+    // allocates a Tmp() instruction in the next line
+    // returns the allocated index
+    pub fn alloc_tmp(&mut self, orig_line: usize) -> usize {
+        self.alloc_stack.push(self.len());
+        self.instructions.push(Instruction::Tmp());
+        self.debug_lines.push(orig_line);
+        return *self.alloc_stack.last().unwrap();
+    }
+
+    // replaces the last Tmp() with a valid instruction
+    // panics if there are no allocated Tmp() instructions
+    pub fn free_top(&mut self, new: Instruction) {
+        self.instructions[self.alloc_stack.pop().unwrap()] = new;
+    }
+}
+
+// index into bytecode using [] operator
+impl Index<usize> for Bytecode {
+    type Output = Instruction;
+
+    fn index<'a>(&'a self, index: usize) -> &'a Instruction {
+        &self.instructions[index]
+    }
+}
+
+impl IndexMut<usize> for Bytecode {
+    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Instruction {
+        &mut self.instructions[index]
+    }
 }
 
 // variable cache for a single block
