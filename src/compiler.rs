@@ -4,7 +4,7 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
 use crate::error::*;
-use crate::lexer::*;
+use crate::tokenizer::*;
 use crate::util::*;
 
 #[derive(Debug, EnumIter)]
@@ -121,7 +121,7 @@ impl Compiler {
                         // ^Never gonna say .+$
                         let expr = String::from(&curln[16..]);
                         let tokens =
-                            self.wrap_check(Lexer::new(expr, self.scope.clone()).make_tokens())?;
+                            self.wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
                         // push Put instruction
                         self.compiled.push(Put(tokens), self.ptr + 1);
                     }
@@ -157,7 +157,7 @@ impl Compiler {
                                 }
                                 let expr = String::from(&slice[(index + 1)..]);
                                 let tokens = self.wrap_check(
-                                    Lexer::new(expr, self.scope.clone()).make_tokens(),
+                                    Tokenizer::new(expr, self.scope.clone()).make_tokens(),
                                 )?;
                                 // push Set instruction
                                 self.compiled.push(Set(varname, tokens), self.ptr + 1);
@@ -193,7 +193,7 @@ impl Compiler {
                         // ^Inside we both know .+$
                         let expr = String::from(&curln[20..]);
                         let tokens =
-                            self.wrap_check(Lexer::new(expr, self.scope.clone()).make_tokens())?;
+                            self.wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
                         // skip the next line if tokens evaluates to true
                         self.compiled.push(Jmpif(tokens, self.compiled.len() + 2), self.ptr + 1);
                         // jmp to end of loop/if

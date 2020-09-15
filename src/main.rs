@@ -4,6 +4,7 @@ use rickroll::interpreter::*;
 use std::io::*;
 
 fn main() {
+    /*
     let src = "\
     Never gonna let n down
     Never gonna give n 10
@@ -39,5 +40,6 @@ fn main() {
     use std::thread;
     thread::sleep(Duration::from_secs(4));
     writeln!(&mut stdout(), "Test3");
+    */
     */
 }

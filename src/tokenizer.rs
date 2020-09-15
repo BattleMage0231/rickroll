@@ -5,17 +5,17 @@ use crate::util::*;
 const SPECIAL: &str = "!&|<>=";
 
 #[derive(Debug)]
-pub struct Lexer {
+pub struct Tokenizer {
     raw: Vec<char>, // raw expression string
     ptr: usize,
     scope: Scope,
     tokens: Vec<Token>,
 }
 
-impl Lexer {
-    // makes a new lexer from the raw string
-    pub fn new(string: String, scope: Scope) -> Lexer {
-        Lexer {
+impl Tokenizer {
+    // makes a new tokenizer from the raw string
+    pub fn new(string: String, scope: Scope) -> Tokenizer {
+        Tokenizer {
             raw: string.trim().chars().collect(),
             ptr: 0,
             scope,
@@ -28,7 +28,7 @@ impl Lexer {
         self.ptr += 1;
     }
 
-    // whether lexer has more characters to parse
+    // whether tokenizer has more characters to parse
     fn has_more(&self) -> bool {
         self.ptr < self.raw.len()
     }
@@ -346,7 +346,7 @@ mod tests {
 
     // helper function to return string form of parsed
     fn get(expr: &str) -> String {
-        match Lexer::new(String::from(expr), Scope::new()).make_tokens() {
+        match Tokenizer::new(String::from(expr), Scope::new()).make_tokens() {
             Ok(tokens) => format!("{:?}", tokens),
             Err(err) => format!("{:?}", err),
         }
