@@ -1,4 +1,5 @@
 use crate::error::*;
+use crate::tokenizer::Token;
 use crate::util::*;
 
 /*

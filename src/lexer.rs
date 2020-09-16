@@ -1,9 +1,81 @@
 use lazy_static::lazy_static;
 use regex::Regex;
+use strum_macros::EnumIter;
 
 use crate::error::*;
 use crate::tokenizer::*;
 use crate::util::*;
+
+use std::ops::{Index, IndexMut};
+
+#[derive(Debug, EnumIter, Clone)]
+pub enum Statement {
+    Say(Vec<Token>),
+    Let(String),
+    Assign(String, Vec<Token>),
+    Check(Vec<Token>),
+    WhileEnd(),
+    IfEnd(),
+}
+
+// intermediate representation of lexed statements
+#[derive(Debug)]
+pub struct Intermediate {
+    statements: Vec<Statement>,
+    debug_lines: Vec<usize>,
+}
+
+impl Intermediate {
+    pub fn new() -> Intermediate {
+        Intermediate {
+            statements: Vec::new(),
+            debug_lines: Vec::new(),
+        }
+    }
+
+    pub fn from(statements: Vec<(usize, Statement)>) -> Intermediate {
+        let mut temp = Intermediate::new();
+        for (line, instruction) in statements {
+            temp.push(instruction, line);
+        }
+        return temp;
+    }
+
+    pub fn to_vec(&self) -> Vec<(usize, Statement)> {
+        let mut res: Vec<(usize, Statement)> = Vec::new();
+        for i in 0..self.len() {
+            res.push((self.debug_lines[i], self.statements[i].clone()));
+        }
+        return res;
+    }
+
+    pub fn len(&self) -> usize {
+        self.statements.len()
+    }
+
+    pub fn push(&mut self, instruction: Statement, orig_line: usize) {
+        self.statements.push(instruction);
+        self.debug_lines.push(orig_line);
+    }
+
+    pub fn debug_line(&self, index: usize) -> usize {
+        self.debug_lines[index]
+    }
+}
+
+impl Index<usize> for Intermediate {
+    type Output = Statement;
+
+    fn index<'a>(&'a self, index: usize) -> &'a Statement {
+        &self.statements[index]
+    }
+}
+
+impl IndexMut<usize> for Intermediate {
+    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Statement {
+        &mut self.statements[index]
+    }
+}
 
 // lex source code into IR
 // does not do any complex syntax checking

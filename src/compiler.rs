@@ -1,5 +1,94 @@
 use crate::error::*;
-use crate::util::*;
+use crate::lexer::{Intermediate, Statement};
+use crate::tokenizer::Token;
+
+use std::ops::{Index, IndexMut};
+
+// bytecode instruction
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    // print
+    Put(Vec<Token>),
+    // end program
+    End(),
+    // let and set variables
+    Let(String),
+    Set(String, Vec<Token>),
+    // jump and conditionally jump
+    Jmp(usize),
+    Jmpif(Vec<Token>, usize),
+    // push and pop context
+    Pctx(),
+    Dctx(),
+    // temporary instruction used to allocate
+    // instructions before their existence
+    Tmp(),
+}
+
+// bytecode definition
+#[derive(Debug)]
+pub struct Bytecode {
+    instructions: Vec<Instruction>,
+    debug_lines: Vec<usize>,
+    /*
+     * function: HashMap<String, usize>,
+     * file: String,
+     * imports: HashMap<String, Bytecode>,
+     */
+}
+
+impl Bytecode {
+    pub fn new() -> Bytecode {
+        Bytecode {
+            instructions: Vec::new(),
+            debug_lines: Vec::new(),
+        }
+    }
+
+    pub fn from(vec: Vec<(usize, Instruction)>) -> Bytecode {
+        let mut bytecode = Bytecode::new();
+        for (line, instruction) in vec {
+            bytecode.push(instruction, line);
+        }
+        return bytecode;
+    }
+
+    pub fn to_vec(&self) -> Vec<(usize, Instruction)> {
+        let mut res: Vec<(usize, Instruction)> = Vec::new();
+        for i in 0..self.len() {
+            res.push((self.debug_lines[i], self.instructions[i].clone()));
+        }
+        return res;
+    }
+
+    pub fn debug_line(&self, index: usize) -> usize {
+        self.debug_lines[index]
+    }
+
+    pub fn len(&self) -> usize {
+        self.instructions.len()
+    }
+
+    pub fn push(&mut self, instruction: Instruction, orig_line: usize) {
+        self.instructions.push(instruction);
+        self.debug_lines.push(orig_line);
+    }
+}
+
+// index into bytecode using [] operator
+impl Index<usize> for Bytecode {
+    type Output = Instruction;
+
+    fn index<'a>(&'a self, index: usize) -> &'a Instruction {
+        &self.instructions[index]
+    }
+}
+
+impl IndexMut<usize> for Bytecode {
+    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Instruction {
+        &mut self.instructions[index]
+    }
+}
 
 #[derive(Debug)]
 pub struct Compiler {
@@ -111,15 +200,17 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
-    use super::Operator::*;
     use super::*;
-    use RickrollObject::*;
+    use crate::tokenizer::Token::*;
+    use crate::util::{Operator::*, RickrollObject::*};
     use Statement::*;
-    use Token::*;
 
     // helper functions
     fn get(s: Vec<(usize, Statement)>) -> String {
-        String::from(format!("{:?}", Compiler::new(Intermediate::from(s)).compile()))
+        String::from(format!(
+            "{:?}",
+            Compiler::new(Intermediate::from(s)).compile()
+        ))
     }
 
     fn assert_eqv(raw: Vec<(usize, Statement)>, res: &str) {
@@ -137,7 +228,7 @@ mod tests {
             "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(3))]), Let(\"b\"), Put([Variable(\"a\")]), Put([Variable(\"b\")]), Put([Variable(\"a\"), Operator(Add), Value(Int(3))]), End], debug_lines: [1, 2, 3, 4, 5, 6, 0] })",
         );
     }
-    
+
     // while loops and if statements
     #[test]
     fn check() {
@@ -150,5 +241,4 @@ mod tests {
             "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(5))]), Jmpif([Variable(\"a\"), Operator(Equals), Value(Int(5))], 4), Jmp(7), Pctx, Put([Value(Bool(true))]), Dctx, End], debug_lines: [1, 2, 3, 3, 3, 4, 5, 0] })",
         );
     }
-    
 }

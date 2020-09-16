@@ -1,11 +1,14 @@
+/*
 use rickroll::compiler::*;
 use rickroll::interpreter::*;
 use rickroll::lexer::*;
 
 use std::io::*;
+*/
 
 fn main() {
-    let src ="\
+    /*
+    let src = "\
     Never gonna let a down
     Never gonna give a 5
     Inside we both know a == 5
@@ -21,4 +24,5 @@ fn main() {
     let compiled = Compiler::new(lexed).compile();
     println!("Finished compiling");
     println!("Result:\n{:?}\n", compiled);
+    */
 }

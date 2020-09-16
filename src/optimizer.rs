@@ -1,5 +1,5 @@
 use crate::error::*;
-use crate::util::*;
+use crate::lexer::Intermediate;
 
 #[derive(Debug)]
 pub struct OptimizerOptions {
@@ -44,9 +44,9 @@ impl Optimizer {
         return res;
     }
 
-    pub fn optimize(mut self) -> Intermediate {
+    pub fn optimize(mut self) -> Result<Intermediate, Error> {
         if !self.options.optimize {
-            return self.code;
+            return Ok(self.code);
         }
         panic!("Optimization is not yet implemented.");
     }

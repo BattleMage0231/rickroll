@@ -1,5 +1,7 @@
+use crate::compiler::{Bytecode, Instruction};
 use crate::error::*;
 use crate::parser::*;
+use crate::tokenizer::Token;
 use crate::util::*;
 
 use std::io::{BufRead, Write};

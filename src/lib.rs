@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_variables, unused_mut)]
+
 pub mod compiler;
 pub mod error;
 pub mod interpreter;

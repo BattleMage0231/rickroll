@@ -2,7 +2,15 @@ use crate::error::*;
 use crate::util::*;
 
 // special operator characters
-const SPECIAL: &str = "!&|<>=";
+const OP_CHAR: &str = "!&|<>=";
+
+// rickroll token
+#[derive(Debug, Clone)]
+pub enum Token {
+    Value(RickrollObject),
+    Operator(Operator),
+    Variable(String),
+}
 
 #[derive(Debug)]
 pub struct Tokenizer {
@@ -58,8 +66,8 @@ impl Tokenizer {
                 self.tokens.push(var);
                 continue;
             }
-            // make special operator
-            if SPECIAL.contains(chr) {
+            // make operator
+            if OP_CHAR.contains(chr) {
                 let operator = self.make_operator()?;
                 self.tokens.push(operator);
                 continue;
@@ -309,7 +317,7 @@ impl Tokenizer {
             self.advance();
             if self.has_more() {
                 let cur = self.raw[self.ptr];
-                if SPECIAL.contains(cur) {
+                if OP_CHAR.contains(cur) {
                     chr = cur;
                 } else {
                     break;

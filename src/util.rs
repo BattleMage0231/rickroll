@@ -1,7 +1,4 @@
 use std::collections::HashMap;
-use std::ops::{Index, IndexMut};
-
-use strum_macros::EnumIter;
 
 // collection of data types
 #[derive(Debug, Clone)]
@@ -73,14 +70,6 @@ impl Operator {
     }
 }
 
-// rickroll token
-#[derive(Debug, Clone)]
-pub enum Token {
-    Value(RickrollObject),
-    Operator(Operator),
-    Variable(String),
-}
-
 // language constants
 pub fn from_constant(constant: &String) -> Option<RickrollObject> {
     match &constant[..] {
@@ -89,161 +78,6 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
         "UNDEFINED" => Some(RickrollObject::Undefined),
         "ARRAY" => Some(RickrollObject::Array(Vec::new())),
         _ => None,
-    }
-}
-
-#[derive(Debug, EnumIter, Clone)]
-pub enum Statement {
-    Say(Vec<Token>),
-    Let(String),
-    Assign(String, Vec<Token>),
-    Check(Vec<Token>),
-    WhileEnd(),
-    IfEnd(),
-}
-
-// intermediate representation of lexed statements
-#[derive(Debug)]
-pub struct Intermediate {
-    statements: Vec<Statement>,
-    debug_lines: Vec<usize>,
-}
-
-impl Intermediate {
-    pub fn new() -> Intermediate {
-        Intermediate {
-            statements: Vec::new(),
-            debug_lines: Vec::new(),
-        }
-    }
-
-    pub fn from(statements: Vec<(usize, Statement)>) -> Intermediate {
-        let mut temp = Intermediate::new();
-        for (line, instruction) in statements {
-            temp.push(instruction, line);
-        }
-        return temp;
-    }
-
-    pub fn to_vec(&self) -> Vec<(usize, Statement)> {
-        let mut res: Vec<(usize, Statement)> = Vec::new();
-        for i in 0..self.len() {
-            res.push((self.debug_lines[i], self.statements[i].clone()));
-        }
-        return res;
-    }
-
-    pub fn len(&self) -> usize {
-        self.statements.len()
-    }
-
-    pub fn push(&mut self, instruction: Statement, orig_line: usize) {
-        self.statements.push(instruction);
-        self.debug_lines.push(orig_line);
-    }
-
-    pub fn debug_line(&self, index: usize) -> usize {
-        self.debug_lines[index]
-    }
-}
-
-impl Index<usize> for Intermediate {
-    type Output = Statement;
-
-    fn index<'a>(&'a self, index: usize) -> &'a Statement {
-        &self.statements[index]
-    }
-}
-
-impl IndexMut<usize> for Intermediate {
-    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Statement {
-        &mut self.statements[index]
-    }
-}
-
-// bytecode instruction
-#[derive(Debug, Clone)]
-pub enum Instruction {
-    // print
-    Put(Vec<Token>),
-    // end program
-    End(),
-    // let and set variables
-    Let(String),
-    Set(String, Vec<Token>),
-    // jump and conditionally jump
-    Jmp(usize),
-    Jmpif(Vec<Token>, usize),
-    // push and pop context
-    Pctx(),
-    Dctx(),
-    // temporary instruction used to allocate
-    // instructions before their existence
-    Tmp(),
-}
-
-// bytecode definition
-#[derive(Debug)]
-pub struct Bytecode {
-    instructions: Vec<Instruction>,
-    debug_lines: Vec<usize>,
-    /*
-     * function: HashMap<String, usize>,
-     * file: String,
-     * imports: HashMap<String, Bytecode>,
-     */
-}
-
-impl Bytecode {
-    pub fn new() -> Bytecode {
-        Bytecode {
-            instructions: Vec::new(),
-            debug_lines: Vec::new(),
-        }
-    }
-
-    pub fn from(vec: Vec<(usize, Instruction)>) -> Bytecode {
-        let mut bytecode = Bytecode::new();
-        for (line, instruction) in vec {
-            bytecode.push(instruction, line);
-        }
-        return bytecode;
-    }
-
-    pub fn to_vec(&self) -> Vec<(usize, Instruction)> {
-        let mut res: Vec<(usize, Instruction)> = Vec::new();
-        for i in 0..self.len() {
-            res.push((self.debug_lines[i], self.instructions[i].clone()));
-        }
-        return res;
-    }
-
-    pub fn debug_line(&self, index: usize) -> usize {
-        self.debug_lines[index]
-    }
-
-    pub fn len(&self) -> usize {
-        self.instructions.len()
-    }
-
-    pub fn push(&mut self, instruction: Instruction, orig_line: usize) {
-        self.instructions.push(instruction);
-        self.debug_lines.push(orig_line);
-    }
-}
-
-// index into bytecode using [] operator
-impl Index<usize> for Bytecode {
-    type Output = Instruction;
-
-    fn index<'a>(&'a self, index: usize) -> &'a Instruction {
-        &self.instructions[index]
-    }
-}
-
-impl IndexMut<usize> for Bytecode {
-    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Instruction {
-        &mut self.instructions[index]
     }
 }
 
