@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
+use strum_macros::EnumIter;
+
 // collection of data types
 #[derive(Debug, Clone)]
 pub enum RickrollObject {
@@ -87,6 +89,59 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
         "UNDEFINED" => Some(RickrollObject::Undefined),
         "ARRAY" => Some(RickrollObject::Array(Vec::new())),
         _ => None,
+    }
+}
+
+#[derive(Debug, EnumIter, Clone)]
+pub enum Statement {
+    Say(Vec<Token>),
+    Let(String),
+    Assign(String, Vec<Token>),
+    Check(Vec<Token>),
+    WhileEnd(),
+    IfEnd(),
+}
+
+// intermediate representation of lexed statements
+#[derive(Debug)]
+pub struct Intermediate {
+    statements: Vec<Statement>,
+    debug_lines: Vec<usize>,
+}
+
+impl Intermediate {
+    pub fn new() -> Intermediate {
+        Intermediate {
+            statements: Vec::new(),
+            debug_lines: Vec::new(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.statements.len()
+    }
+
+    pub fn push(&mut self, instruction: Statement, orig_line: usize) {
+        self.statements.push(instruction);
+        self.debug_lines.push(orig_line);
+    }
+
+    pub fn debug_line(&self, index: usize) -> usize {
+        self.debug_lines[index]
+    }
+}
+
+impl Index<usize> for Intermediate {
+    type Output = Statement;
+
+    fn index<'a>(&'a self, index: usize) -> &'a Statement {
+        &self.statements[index]
+    }
+}
+
+impl IndexMut<usize> for Intermediate {
+    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Statement {
+        &mut self.statements[index]
     }
 }
 

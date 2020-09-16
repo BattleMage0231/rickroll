@@ -1,3 +1,5 @@
+/*
+
 use rickroll::interpreter::*;
 use rickroll::util::Bytecode;
 
@@ -168,3 +170,5 @@ fn error() {
         "Error { err: IllegalArgumentError, desc: \"Unexpected non-boolean argument\", line: Some(1), child: None }",
     )
 }
+
+*/

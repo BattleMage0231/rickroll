@@ -1,3 +1,5 @@
+/*
+
 use rickroll::compiler::*;
 
 // helper functions
@@ -85,3 +87,5 @@ fn error() {
         "Err(Error { err: SyntaxError, desc: \"Mismatched while or if start\", line: Some(1), child: None })",
     );
 }
+
+*/

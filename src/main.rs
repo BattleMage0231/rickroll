@@ -1,10 +1,10 @@
 use rickroll::compiler::*;
 use rickroll::interpreter::*;
+use rickroll::lexer::*;
 
 use std::io::*;
 
 fn main() {
-    /*
     let src = "\
     Never gonna let n down
     Never gonna give n 10
@@ -23,7 +23,12 @@ fn main() {
     We know the game and we're gonna play it
     "
     .to_string();
-    let compiled = Compiler::new(src).compile();
+    println!("Started lexing");
+    let lexed = Lexer::new(src).parse().unwrap();
+    println!("Finished lexing");
+    println!("Started compiling");
+    let compiled = Compiler::new(lexed).compile();
+    println!("Finished compiling");
     let compiled = match compiled {
         Err(err) => panic!("{}", err),
         Ok(val) => val,
@@ -32,14 +37,4 @@ fn main() {
     Interpreter::new(compiled)
         .run(&mut stdout(), &mut BufReader::new(&mut stdin()))
         .unwrap();
-    /*
-    use std::io::*;
-    writeln!(&mut stdout(), "Test");
-    writeln!(&mut stdout(), "Test2");
-    use std::time::Duration;
-    use std::thread;
-    thread::sleep(Duration::from_secs(4));
-    writeln!(&mut stdout(), "Test3");
-    */
-    */
 }
