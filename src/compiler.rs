@@ -110,4 +110,45 @@ impl Compiler {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::Operator::*;
+    use super::*;
+    use RickrollObject::*;
+    use Statement::*;
+    use Token::*;
+
+    // helper functions
+    fn get(s: Vec<(usize, Statement)>) -> String {
+        String::from(format!("{:?}", Compiler::new(Intermediate::from(s)).compile()))
+    }
+
+    fn assert_eqv(raw: Vec<(usize, Statement)>, res: &str) {
+        assert_eq!(&get(raw)[..], res);
+    }
+
+    #[test]
+    fn simple() {
+        assert_eqv(
+            vec![(1, Say(vec![Value(Int(1)), Operator(Add), Value(Int(2))])), (2, Say(vec![Value(Int(3)), Operator(Greater), Value(Int(4))]))],
+            "Ok(Bytecode { instructions: [Put([Value(Int(1)), Operator(Add), Value(Int(2))]), Put([Value(Int(3)), Operator(Greater), Value(Int(4))]), End], debug_lines: [1, 2, 0] })",
+        );
+        assert_eqv(
+            vec![(1, Let(String::from("a"))), (2, Assign(String::from("a"), vec![Value(Int(3))])), (3, Let(String::from("b"))), (4, Say(vec![Variable(String::from("a"))])), (5, Say(vec![Variable(String::from("b"))])), (6, Say(vec![Variable(String::from("a")), Operator(Add), Value(Int(3))]))],
+            "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(3))]), Let(\"b\"), Put([Variable(\"a\")]), Put([Variable(\"b\")]), Put([Variable(\"a\"), Operator(Add), Value(Int(3))]), End], debug_lines: [1, 2, 3, 4, 5, 6, 0] })",
+        );
+    }
+    
+    // while loops and if statements
+    #[test]
+    fn check() {
+        assert_eqv(
+            vec![(1, Let(String::from("n"))), (2, Assign(String::from("n"), vec![Value(Int(10))])), (3, Let(String::from("first"))), (4, Let(String::from("second"))), (5, Assign(String::from("first"), vec![Value(Int(0))])), (6, Assign(String::from("second"), vec![Value(Int(1))])), (7, Say(vec![Variable(String::from("second"))])), (8, Check(vec![Variable(String::from("n")), Operator(NotEquals), Value(Int(0))])), (9, Let(String::from("sum"))), (10, Assign(String::from("sum"), vec![Variable(String::from("first")), Operator(Add), Variable(String::from("second"))])), (11, Say(vec![Variable(String::from("sum"))])), (12, Assign(String::from("first"), vec![Variable(String::from("second"))])), (13, Assign(String::from("second"), vec![Variable(String::from("sum"))])), (14, Assign(String::from("n"), vec![Variable(String::from("n")), Operator(Subtract), Value(Int(1))])), (15, WhileEnd())],
+            "Ok(Bytecode { instructions: [Let(\"n\"), Set(\"n\", [Value(Int(10))]), Let(\"first\"), Let(\"second\"), Set(\"first\", [Value(Int(0))]), Set(\"second\", [Value(Int(1))]), Put([Variable(\"second\")]), Jmpif([Variable(\"n\"), Operator(NotEquals), Value(Int(0))], 9), Jmp(18), Pctx, Let(\"sum\"), Set(\"sum\", [Variable(\"first\"), Operator(Add), Variable(\"second\")]), Put([Variable(\"sum\")]), Set(\"first\", [Variable(\"second\")]), Set(\"second\", [Variable(\"sum\")]), Set(\"n\", [Variable(\"n\"), Operator(Subtract), Value(Int(1))]), Dctx, Jmp(7), End], debug_lines: [1, 2, 3, 4, 5, 6, 7, 8, 8, 8, 9, 10, 11, 12, 13, 14, 15, 15, 0] })",
+        );
+        assert_eqv(
+            vec![(1, Let(String::from("a"))), (2, Assign(String::from("a"), vec![Value(Int(5))])), (3, Check(vec![Variable(String::from("a")), Operator(Equals), Value(Int(5))])), (4, Say(vec![Value(Bool(true))])), (5, IfEnd())],
+            "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(5))]), Jmpif([Variable(\"a\"), Operator(Equals), Value(Int(5))], 4), Jmp(7), Pctx, Put([Value(Bool(true))]), Dctx, End], debug_lines: [1, 2, 3, 3, 3, 4, 5, 0] })",
+        );
+    }
+    
+}

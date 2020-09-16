@@ -57,7 +57,6 @@ impl Lexer {
     }
 
     pub fn parse(mut self) -> Result<Intermediate, Error> {
-        println!("A");
         // regexes for matching statements
         lazy_static! {
             // print
@@ -70,10 +69,8 @@ impl Lexer {
             static ref WHILE_END: Regex = Regex::new("^We know the game and we\'re gonna play it$").unwrap();
             static ref IF_END: Regex = Regex::new("^Your heart\'s been aching but you\'re too shy to say it$").unwrap();
         }
-        println!("B");
         // iterate over raw
         while self.has_more() {
-            println!("C");
             // try to match a statement
             let curln = self.raw[self.ptr].trim();
             if curln == "" {
@@ -141,7 +138,7 @@ impl Lexer {
                 if self.check_counter == 0 {
                     return Err(Error::new(
                         ErrorType::SyntaxError,
-                        "Mismatched while or if end",
+                        "Mismatched while end",
                         Some(self.ptr + 1),
                     ));
                 }
@@ -153,7 +150,7 @@ impl Lexer {
                 if self.check_counter == 0 {
                     return Err(Error::new(
                         ErrorType::SyntaxError,
-                        "Mismatched while or if end",
+                        "Mismatched if end",
                         Some(self.ptr + 1),
                     ));
                 }
@@ -171,8 +168,8 @@ impl Lexer {
         if self.check_counter != 0 {
             return Err(Error::new(
                 ErrorType::SyntaxError,
-                "Mismatched while or if end",
-                Some(self.ptr + 1),
+                "Mismatched while or if start",
+                Some(self.ptr),
             ));
         }
         return Ok(self.lexed);
@@ -180,4 +177,90 @@ impl Lexer {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+
+    fn get(s: &str) -> String {
+        String::from(format!("{:?}", Lexer::new(String::from(s)).parse()))
+    }
+    fn assert_eqv(raw: &str, res: &str) {
+        assert_eq!(&get(raw)[..], res);
+    }
+
+    #[test]
+    fn simple() {
+        assert_eqv(
+            "\
+            Never gonna say 1 + 2
+            Never gonna say 3 > 4
+            ",
+            "Ok(Intermediate { statements: [Say([Value(Int(1)), Operator(Add), Value(Int(2))]), Say([Value(Int(3)), Operator(Greater), Value(Int(4))])], debug_lines: [1, 2] })",
+        );
+        assert_eqv(
+            "\
+            Never gonna let a down
+            Never gonna give a 3
+            Never gonna let b down
+            Never gonna say a
+            Never gonna say b
+            Never gonna say a + 3
+            ",
+            "Ok(Intermediate { statements: [Let(\"a\"), Assign(\"a\", [Value(Int(3))]), Let(\"b\"), Say([Variable(\"a\")]), Say([Variable(\"b\")]), Say([Variable(\"a\"), Operator(Add), Value(Int(3))])], debug_lines: [1, 2, 3, 4, 5, 6] })",
+        );
+    }
+
+    // while loops and if statements
+    #[test]
+    fn check() {
+        assert_eqv(
+            "\
+            Never gonna let n down
+            Never gonna give n 10
+            Never gonna let first down
+            Never gonna let second down
+            Never gonna give first 0
+            Never gonna give second 1
+            Never gonna say second
+            Inside we both know n != 0
+                Never gonna let sum down
+                Never gonna give sum first + second
+                Never gonna say sum
+                Never gonna give first second
+                Never gonna give second sum
+                Never gonna give n n - 1
+            We know the game and we're gonna play it
+            ",
+            "Ok(Intermediate { statements: [Let(\"n\"), Assign(\"n\", [Value(Int(10))]), Let(\"first\"), Let(\"second\"), Assign(\"first\", [Value(Int(0))]), Assign(\"second\", [Value(Int(1))]), Say([Variable(\"second\")]), Check([Variable(\"n\"), Operator(NotEquals), Value(Int(0))]), Let(\"sum\"), Assign(\"sum\", [Variable(\"first\"), Operator(Add), Variable(\"second\")]), Say([Variable(\"sum\")]), Assign(\"first\", [Variable(\"second\")]), Assign(\"second\", [Variable(\"sum\")]), Assign(\"n\", [Variable(\"n\"), Operator(Subtract), Value(Int(1))]), WhileEnd], debug_lines: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] })",
+        );
+        assert_eqv(
+            "\
+            Never gonna let a down
+            Never gonna give a 5
+            Inside we both know a == 5
+                Never gonna say TRUE
+            Your heart's been aching but you're too shy to say it
+            ",
+            "Ok(Intermediate { statements: [Let(\"a\"), Assign(\"a\", [Value(Int(5))]), Check([Variable(\"a\"), Operator(Equals), Value(Int(5))]), Say([Value(Bool(true))]), IfEnd], debug_lines: [1, 2, 3, 4, 5] })",
+        );
+    }
+
+    // should output Result::Error
+    #[test]
+    fn error() {
+        assert_eqv(
+            "\
+            asdasdasdasd
+            Never gonna say a
+            ",
+            "Err(Error { err: SyntaxError, desc: \"Illegal statement\", line: Some(1), child: None })",
+        );
+        assert_eqv(
+            "\
+            Inside we both know TRUE
+                Inside we both know TRUE
+                Your heart's been aching but you're too shy to say it
+            ",
+            "Err(Error { err: SyntaxError, desc: \"Mismatched while or if start\", line: Some(4), child: None })",
+        );
+    }
+}

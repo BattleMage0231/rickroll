@@ -117,6 +117,22 @@ impl Intermediate {
         }
     }
 
+    pub fn from(statements: Vec<(usize, Statement)>) -> Intermediate {
+        let mut temp = Intermediate::new();
+        for (line, instruction) in statements {
+            temp.push(instruction, line);
+        }
+        return temp;
+    }
+
+    pub fn to_vec(&self) -> Vec<(usize, Statement)> {
+        let mut res: Vec<(usize, Statement)> = Vec::new();
+        for i in 0..self.len() {
+            res.push((self.debug_lines[i], self.statements[i].clone()));
+        }
+        return res;
+    }
+
     pub fn len(&self) -> usize {
         self.statements.len()
     }
@@ -171,7 +187,6 @@ pub enum Instruction {
 pub struct Bytecode {
     instructions: Vec<Instruction>,
     debug_lines: Vec<usize>,
-    alloc_stack: Vec<usize>,
     /*
      * function: HashMap<String, usize>,
      * file: String,
@@ -184,7 +199,6 @@ impl Bytecode {
         Bytecode {
             instructions: Vec::new(),
             debug_lines: Vec::new(),
-            alloc_stack: Vec::new(),
         }
     }
 
@@ -215,25 +229,6 @@ impl Bytecode {
     pub fn push(&mut self, instruction: Instruction, orig_line: usize) {
         self.instructions.push(instruction);
         self.debug_lines.push(orig_line);
-    }
-
-    pub fn has_tmp(&self) -> bool {
-        !self.alloc_stack.is_empty()
-    }
-
-    // allocates a Tmp() instruction in the next line
-    // returns the allocated index
-    pub fn alloc_tmp(&mut self, orig_line: usize) -> usize {
-        self.alloc_stack.push(self.len());
-        self.instructions.push(Instruction::Tmp());
-        self.debug_lines.push(orig_line);
-        return *self.alloc_stack.last().unwrap();
-    }
-
-    // replaces the last Tmp() with a valid instruction
-    // panics if there are no allocated Tmp() instructions
-    pub fn free_top(&mut self, new: Instruction) {
-        self.instructions[self.alloc_stack.pop().unwrap()] = new;
     }
 }
 
