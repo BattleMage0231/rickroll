@@ -1,6 +1,6 @@
 use crate::compiler::{Bytecode, Instruction};
 use crate::error::*;
-use crate::parser::*;
+use crate::parser::Parser;
 use crate::tokenizer::Token;
 use crate::util::*;
 
@@ -49,7 +49,7 @@ impl Interpreter {
 
     // takes in a mutable buffer and reader rather than
     // writing to stdout and reading from stdin
-    pub fn run<W, R>(mut self, buffer: &mut W, reader: &mut R) -> Result<RickrollObject, Error>
+    pub fn run<W, R>(mut self, mut buffer: W, mut reader: R) -> Result<RickrollObject, Error>
     where
         W: Write,
         R: BufRead,
