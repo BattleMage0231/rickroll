@@ -20,6 +20,13 @@ pub enum Instruction {
     // push and pop context
     Pctx(),
     Dctx(),
+    // function instructions
+    Call(String),
+    Scall(String, String),
+    Ret(Vec<Token>),
+    // argument queue instructions
+    Pushq(String),
+    Exp(String),
 }
 
 // bytecode function
@@ -27,6 +34,7 @@ pub enum Instruction {
 pub struct Function {
     name: String,
     instructions: Vec<Instruction>,
+    args: Vec<String>,
     debug_lines: Vec<usize>,
     /*
      * file: String,
@@ -34,12 +42,21 @@ pub struct Function {
 }
 
 impl Function {
-    pub fn new(name: String) -> Function {
+    pub fn new(name: String, args: Vec<String>) -> Function {
         Function {
             name,
             instructions: Vec::new(),
+            args,
             debug_lines: Vec::new(),
         }
+    }
+
+    pub fn set_args(&mut self, args: Vec<String>) {
+        self.args = args;
+    }
+
+    pub fn get_args(&self) -> &Vec<String> {
+        &self.args
     }
 
     pub fn get_name(&self) -> &String {
@@ -54,8 +71,8 @@ impl Function {
         self.instructions.len()
     }
 
-    pub fn from(name: String, vec: Vec<(usize, Instruction)>) -> Function {
-        let mut func = Function::new(name);
+    pub fn from(name: String, args: Vec<String>, vec: Vec<(usize, Instruction)>) -> Function {
+        let mut func = Function::new(name, args);
         for (line, instruction) in vec {
             func.push(instruction, line);
         }
@@ -195,10 +212,13 @@ impl Compiler {
                 Intro() => {
                     self.parse_global()?;
                 }
+                Verse(_, _) => {
+                    self.parse_function()?;
+                }
                 _ => {
                     return Err(Error::new(
                         ErrorType::SyntaxError,
-                        "Statement cannot be unblocked",
+                        "Unblocked statement",
                         Some(self.raw.debug_line(self.ptr)),
                     ));
                 }
@@ -214,11 +234,11 @@ impl Compiler {
         // pointer at [Intro]
         self.advance();
         // make function
-        let mut global: Function = Function::new(String::from("[Global]"));
+        let mut global: Function = Function::new(String::from("[Global]"), Vec::new());
         while self.has_more() {
             let statement = self.raw[self.ptr].clone();
             match &statement {
-                Statement::Chorus() | Statement::Verse(_) => break,
+                Statement::Chorus() | Statement::Verse(_, _) => break,
                 // in the global function, all variables are global
                 Statement::Let(varname) => {
                     global.push(
@@ -239,11 +259,11 @@ impl Compiler {
         // pointer at [Chorus]
         self.advance();
         // make function
-        let mut main: Function = Function::new(String::from("[Main]"));
+        let mut main: Function = Function::new(String::from("[Main]"), Vec::new());
         while self.has_more() {
             let statement = self.raw[self.ptr].clone();
             match statement {
-                Statement::Intro() | Statement::Verse(_) => break,
+                Statement::Intro() | Statement::Verse(_, _) => break,
                 _ => self.parse_common(&mut main, statement)?,
             }
         }
@@ -253,13 +273,17 @@ impl Compiler {
 
     fn parse_function(&mut self) -> Result<(), Error> {
         // pointer at [Verse X]
-        let func_name = match self.raw[self.ptr].clone() {
-            Statement::Verse(name) => name,
+        let func_sig = match self.raw[self.ptr].clone() {
+            Statement::Verse(name, args) => (name, args),
             _ => panic!("parse_function() called without being at [Verse]"),
-        };
+        }; 
+        let (func_name, func_args) = func_sig;
         self.advance();
         // make function
-        let mut func: Function = Function::new(func_name.clone());
+        let mut func: Function = Function::new(func_name.clone(), func_args.clone());
+        for var in func_args {
+            func.push(Instruction::Exp(var), self.raw.debug_line(self.ptr));
+        }
         while self.has_more() {
             let statement = self.raw[self.ptr].clone();
             match statement {
@@ -277,6 +301,7 @@ impl Compiler {
         use Instruction::*;
         use Statement::*;
         match statement {
+            Chorus() | Intro() | Verse(_, _) => panic!("Blocks cannot be commonly parsed"),
             // print
             Say(tokens) => {
                 function.push(Put(tokens), self.raw.debug_line(self.ptr));
@@ -345,7 +370,28 @@ impl Compiler {
                 let top = self.check_stack.pop().unwrap(); // pop last check index
                 function[top] = Jmp(self.func_ptr);
             }
-            _ => panic!("Could not match common statement"),
+            Return(tokens) => {
+                function.push(Ret(tokens), self.raw.debug_line(self.ptr));
+                self.func_ptr += 1;
+            }
+            Run(func, args) => {
+                let debug_line = self.raw.debug_line(self.ptr);
+                for var in args {
+                    function.push(Pushq(var), debug_line);
+                    self.func_ptr += 1;
+                }
+                function.push(Call(func), debug_line);
+                self.func_ptr += 1;
+            }
+            RunAssign(func, var, args) => {
+                let debug_line = self.raw.debug_line(self.ptr);
+                for var in args {
+                    function.push(Pushq(var), debug_line);
+                    self.func_ptr += 1;
+                }
+                function.push(Scall(func, var), debug_line);
+                self.func_ptr += 1;
+            }
         }
         self.advance();
         return Ok(());

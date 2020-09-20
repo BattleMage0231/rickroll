@@ -5,38 +5,35 @@ use crate::tokenizer::Token;
 use crate::util::*;
 
 use std::io::{BufRead, Write};
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub struct Interpreter {
-    ptr: usize,
     bytecode: Bytecode,
     scope: Scope, // global scope -> scope1... -> current scope
-    function_stack: Vec<String>,
+    function_stack: Vec<String>, // function call stack
+    arg_queue: VecDeque<RickrollObject>, // function argument queue
 }
 
 impl Interpreter {
     pub fn new(bytecode: Bytecode) -> Interpreter {
         Interpreter {
-            ptr: 0,
             bytecode,
             scope: Scope::new(),
             function_stack: Vec::new(),
+            arg_queue: VecDeque::new(),
         }
     }
 
-    pub fn advance(&mut self) {
-        self.ptr += 1;
-    }
-
     // wraps a traceback around a possible error
-    fn wrap_check<T>(&self, res: Result<T, Error>) -> Result<T, Error> {
+    fn wrap_check<T>(&self, res: Result<T, Error>, ptr: usize) -> Result<T, Error> {
         if let Err(error) = res {
             return Err(Error::traceback(
                 error,
                 Some(
                     self.bytecode
                         .get_func(self.function_stack.last().unwrap().clone())
-                        .debug_line(self.ptr),
+                        .debug_line(ptr),
                 ),
             ));
         }
@@ -44,9 +41,9 @@ impl Interpreter {
     }
 
     // evaluates an expression using the parser and error-wraps its result
-    fn eval(&self, tokens: Vec<Token>) -> Result<RickrollObject, Error> {
+    fn eval(&self, tokens: Vec<Token>, ptr: usize) -> Result<RickrollObject, Error> {
         let parser = Parser::new(tokens, self.scope.clone());
-        return self.wrap_check(parser.eval());
+        return self.wrap_check(parser.eval(), ptr);
     }
 
     // executes a function
@@ -60,15 +57,16 @@ impl Interpreter {
         W: Write,
         R: BufRead,
     {
-        self.ptr = 0; // reset function pointer
+        // push current function to stack
+        self.function_stack.push(func.clone());
+        let mut ptr = 0; // function ptr
         let function = self.bytecode.get_func(func.clone()); // get function bytecode
-        self.function_stack.push(func.clone()); // push function name to stack
-        while self.ptr < function.len() {
-            let opcode = &function[self.ptr];
+        while ptr < function.len() {
+            let opcode = &function[ptr];
             use Instruction::*;
             match opcode {
                 Put(tokens) => {
-                    writeln!(buffer, "{}", self.eval(tokens.clone())?)
+                    writeln!(buffer, "{}", self.eval(tokens.clone(), ptr)?)
                         .expect("Error when writing to buffer");
                 }
                 Let(varname) => {
@@ -80,28 +78,28 @@ impl Interpreter {
                         .set_var(varname.clone(), RickrollObject::Undefined);
                 }
                 Set(varname, tokens) => {
-                    let val = self.eval(tokens.clone())?;
+                    let val = self.eval(tokens.clone(), ptr)?;
                     self.scope.set_var(varname.clone(), val);
                 }
                 Jmp(dest) => {
-                    self.ptr = *dest;
+                    ptr = *dest;
                     continue; // do not advance()
                 }
                 Jmpif(tokens, dest) => {
                     // jump??
-                    let val = self.eval(tokens.clone())?;
+                    let val = self.eval(tokens.clone(), ptr)?;
                     let jump = match val {
                         RickrollObject::Bool(x) => x,
                         _ => {
                             return Err(Error::new(
                                 ErrorType::IllegalArgumentError,
                                 "Unexpected non-boolean argument",
-                                Some(function.debug_line(self.ptr)),
+                                Some(function.debug_line(ptr)),
                             ))
                         }
                     };
                     if jump {
-                        self.ptr = *dest;
+                        ptr = *dest;
                         continue; // do not advance()
                     }
                 }
@@ -111,8 +109,33 @@ impl Interpreter {
                 Dctx() => {
                     self.scope.pop();
                 }
+                Call(func) => {
+                    match self.run(func.clone(), buffer, reader) {
+                        Err(err) => return Err(Error::traceback(err, Some(function.debug_line(ptr)))),
+                        Ok(_) => (),
+                    }
+                }
+                Scall(func, varname) => {
+                    match self.run(func.clone(), buffer, reader) {
+                        Err(err) => return Err(Error::traceback(err, Some(function.debug_line(ptr)))),
+                        Ok(obj) => self.scope.set_var(varname.clone(), obj),
+                    }
+                }
+                Ret(tokens) => {
+                    return match self.eval(tokens.clone(), ptr) {
+                        Err(err) => Err(Error::traceback(err, Some(function.debug_line(ptr)))),
+                        Ok(obj) => Ok(obj),
+                    }
+                }
+                Pushq(var) => {
+                    self.arg_queue.push_back(self.scope.get_var(var.clone()).unwrap());
+                }
+                Exp(var) => {
+                    self.scope.add_var(var.clone());
+                    self.scope.set_var(var.clone(), self.arg_queue.pop_front().unwrap());
+                }
             }
-            self.advance();
+            ptr += 1; // increment pointer
         }
         return Ok(RickrollObject::Undefined);
     }

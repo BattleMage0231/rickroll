@@ -6,7 +6,7 @@ use crate::error::*;
 use crate::tokenizer::*;
 use crate::util::*;
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, EnumIter, Clone)]
@@ -20,7 +20,11 @@ pub enum Statement {
     // functions
     Chorus(),
     Intro(),
-    Verse(String),
+    Verse(String, Vec<String>),
+    // function utilities
+    Return(Vec<Token>),
+    Run(String, Vec<String>),
+    RunAssign(String, String, Vec<String>),
 }
 
 // intermediate representation of lexed statements
@@ -91,7 +95,7 @@ pub struct Lexer {
     lexed: Intermediate,
     scope: Scope,
     check_counter: usize,
-    function_cache: HashSet<String>,
+    function_cache: HashMap<String, usize>, // <Name, Arg count>
 }
 
 impl Lexer {
@@ -115,7 +119,7 @@ impl Lexer {
             lexed: Intermediate::new(),
             scope: Scope::new(),
             check_counter: 0,
-            function_cache: HashSet::new(),
+            function_cache: HashMap::new(),
         }
     }
 
@@ -135,6 +139,60 @@ impl Lexer {
         return res;
     }
 
+    // helper function splitting a string of the form "A, BCD, EEE" into ["A", "BCD", "EEE"]
+    fn split_vars(&self, raw: String) -> Result<Vec<String>, Error> {
+        let mut args: Vec<String> = Vec::new();
+        let mut cur: String = String::new();
+        for chr in String::from(raw.trim()).chars() {
+            // valid character
+            if chr.is_ascii_alphabetic() || chr == '_' {
+                cur.push(chr);
+            } else if chr == ',' {
+                // variable break
+                if cur.is_empty() {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        "Blank variable name",
+                        Some(self.ptr + 1),
+                    ));
+                }
+                args.push(cur.to_owned());
+                // check variable exists
+                if !self.function_cache.contains_key(&cur) {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &(format!("Variable {} not found", cur))[..],
+                        Some(self.ptr + 1),
+                    ));
+                }
+                cur.clear();
+            } else if !chr.is_ascii_whitespace() {
+                // illegal character
+                return Err(Error::new(
+                    ErrorType::IllegalArgumentError,
+                    &(format!("Illegal character \"{}\" in variable", chr))[..],
+                    Some(self.ptr + 1),
+                ));
+            }
+        }
+        // keyword up returns no arguments
+        if cur == String::from("up") {
+            return Ok(Vec::new());
+        }
+        if !cur.is_empty() {
+            args.push(cur.to_owned());
+            // check variable exists
+            if !self.function_cache.contains_key(&cur) {
+                return Err(Error::new(
+                    ErrorType::NameError,
+                    &(format!("Variable {} not found", cur))[..],
+                    Some(self.ptr + 1),
+                ));
+            }
+        }
+        return Ok(args);
+    }
+
     pub fn parse(mut self) -> Result<Intermediate, Error> {
         // regexes for matching statements
         lazy_static! {
@@ -151,6 +209,12 @@ impl Lexer {
             static ref CHORUS: Regex = Regex::new("^\\[Chorus\\]$").unwrap();
             static ref INTRO: Regex = Regex::new("^\\[Intro\\]$").unwrap();
             static ref VERSE: Regex = Regex::new("^\\[Verse \\w+\\]$").unwrap();
+            // function statements
+            static ref RUN: Regex = Regex::new("^Never gonna run \\w+ and desert .+$").unwrap();
+            static ref RUN_ASSIGN: Regex = Regex::new("^\\(Ooh give you \\w+\\) Never gonna run \\w+ and desert .+$").unwrap();
+            static ref RETURN: Regex = Regex::new("^\\(Ooh\\) Never gonna give, never gonna give \\(give you .+\\)$").unwrap();
+            // function parameters
+            static ref ARGS: Regex = Regex::new("\\(Ooh give you .+\\)").unwrap();
         }
         // boolean flags
         let mut has_chorus = false;
@@ -263,16 +327,109 @@ impl Lexer {
                 has_intro = true;
             } else if VERSE.is_match(curln) {
                 // ^\\[Verse \\w+\\]$
-                let func_name = String::from(curln[7..(curln.len() - 1)].trim());
-                if self.function_cache.contains(&func_name) {
+                let func_name = String::from(&curln[7..(curln.len() - 1)]);
+                if self.function_cache.contains_key(&func_name) {
                     return Err(Error::new(
                         ErrorType::NameError,
                         &(format!("Function {} already exists", func_name))[..],
                         Some(self.ptr + 1),
                     ));
                 }
-                self.function_cache.insert(func_name.clone());
-                self.lexed.push(Statement::Verse(func_name), self.ptr + 1);
+                // now we have to read parameters
+                self.advance();
+                let curln = self.raw[self.ptr].trim();
+                if !self.has_more() || !ARGS.is_match(curln) {
+                    return Err(Error::new(
+                        ErrorType::SyntaxError,
+                        &(format!("No argument specification for function {}", func_name))[..],
+                        Some(self.ptr + 1),
+                    ));
+                }
+                // "\\(Ooh give you .+\\)"
+                let func_args = self.split_vars(String::from(&curln[14..(curln.len() - 1)]))?;
+                // push function
+                self.function_cache
+                    .insert(func_name.clone(), func_args.len());
+                self.lexed
+                    .push(Statement::Verse(func_name, func_args), self.ptr + 1);
+            } else if RUN.is_match(curln) {
+                // ^Never gonna run \\w+ and desert .+$
+                let substring = String::from(&curln[16..]); // \\w+ and desert .+$
+                let ind = substring.find(' ').unwrap();
+                // get function info
+                let func_name = String::from(&substring[..ind]);
+                let func_args = self.split_vars(String::from(&substring[(ind + 12)..]))?;
+                // function must exist
+                if !self.function_cache.contains_key(&func_name) {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &(format!("Function {} not found", func_name))[..],
+                        Some(self.ptr + 1),
+                    ));
+                }
+                // function arguments must be same length
+                if *self.function_cache.get(&func_name).unwrap() != func_args.len() {
+                    return Err(Error::new(
+                        ErrorType::IllegalArgumentError,
+                        &(format!(
+                            "Function {} called with a different amount of arguments",
+                            func_name
+                        )[..]),
+                        Some(self.ptr + 1),
+                    ));
+                }
+                // push function call
+                self.lexed
+                    .push(Statement::Run(func_name, func_args), self.ptr + 1);
+            } else if RUN_ASSIGN.is_match(curln) {
+                // ^\\(Ooh give you \\w+\\) Never gonna run \\w+ and desert .+$
+                let substring = String::from(&curln[14..]); // \\w+\\) Never gonna run \\w+ and desert .+$
+                let ind = substring.find(')').unwrap();
+                // get variable info
+                let varname = String::from(&substring[..ind]);
+                // variable must exist
+                if !self.scope.has_var(varname.clone()) {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &(format!("Variable {} doesn't exist", varname))[..],
+                        Some(self.ptr + 1),
+                    ));
+                }
+                let substring = String::from(&substring[18..]); // \\w+ and desert .+$
+                let ind = substring.find(' ').unwrap();
+                // get function info
+                let func_name = String::from(&substring[..ind]);
+                let func_args = self.split_vars(String::from(&substring[(ind + 12)..]))?;
+                // function must exist
+                if !self.function_cache.contains_key(&func_name) {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &(format!("Function {} not found", func_name))[..],
+                        Some(self.ptr + 1),
+                    ));
+                }
+                // function arguments must be same length
+                if *self.function_cache.get(&func_name).unwrap() != func_args.len() {
+                    return Err(Error::new(
+                        ErrorType::IllegalArgumentError,
+                        &(format!(
+                            "Function {} called with a different amount of arguments",
+                            func_name
+                        )[..]),
+                        Some(self.ptr + 1),
+                    ));
+                }
+                // push function call
+                self.lexed.push(
+                    Statement::RunAssign(varname, func_name, func_args),
+                    self.ptr + 1,
+                );
+            } else if RETURN.is_match(curln) {
+                // ^\\(Ooh\\) Never gonna give, never gonna give \\(give you .+\\)$
+                let expr = String::from(&curln[51..(curln.len() - 1)]);
+                let tokens =
+                    self.wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
+                self.lexed.push(Statement::Return(tokens), self.ptr + 1);
             } else {
                 // unknown statement
                 return Err(Error::new(
