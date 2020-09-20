@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::lexer::{Intermediate, Statement};
 use crate::tokenizer::Token;
 
+use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
 // bytecode instruction
@@ -9,10 +10,9 @@ use std::ops::{Index, IndexMut};
 pub enum Instruction {
     // print
     Put(Vec<Token>),
-    // end program
-    End(),
-    // let and set variables
+    // let, globally let, and set variables
     Let(String),
+    Glb(String),
     Set(String, Vec<Token>),
     // jump and conditionally jump
     Jmp(usize),
@@ -20,37 +20,46 @@ pub enum Instruction {
     // push and pop context
     Pctx(),
     Dctx(),
-    // temporary instruction used to allocate
-    // instructions before their existence
-    Tmp(),
 }
 
-// bytecode definition
-#[derive(Debug)]
-pub struct Bytecode {
+// bytecode function
+#[derive(Debug, Clone)]
+pub struct Function {
+    name: String,
     instructions: Vec<Instruction>,
     debug_lines: Vec<usize>,
     /*
-     * function: HashMap<String, usize>,
      * file: String,
-     * imports: HashMap<String, Bytecode>,
      */
 }
 
-impl Bytecode {
-    pub fn new() -> Bytecode {
-        Bytecode {
+impl Function {
+    pub fn new(name: String) -> Function {
+        Function {
+            name,
             instructions: Vec::new(),
             debug_lines: Vec::new(),
         }
     }
 
-    pub fn from(vec: Vec<(usize, Instruction)>) -> Bytecode {
-        let mut bytecode = Bytecode::new();
+    pub fn get_name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn set_name(&mut self, name: String) {
+        self.name = name;
+    }
+
+    pub fn len(&self) -> usize {
+        self.instructions.len()
+    }
+
+    pub fn from(name: String, vec: Vec<(usize, Instruction)>) -> Function {
+        let mut func = Function::new(name);
         for (line, instruction) in vec {
-            bytecode.push(instruction, line);
+            func.push(instruction, line);
         }
-        return bytecode;
+        return func;
     }
 
     pub fn to_vec(&self) -> Vec<(usize, Instruction)> {
@@ -65,18 +74,14 @@ impl Bytecode {
         self.debug_lines[index]
     }
 
-    pub fn len(&self) -> usize {
-        self.instructions.len()
-    }
-
     pub fn push(&mut self, instruction: Instruction, orig_line: usize) {
         self.instructions.push(instruction);
         self.debug_lines.push(orig_line);
     }
 }
 
-// index into bytecode using [] operator
-impl Index<usize> for Bytecode {
+// index into function using [] operator
+impl Index<usize> for Function {
     type Output = Instruction;
 
     fn index<'a>(&'a self, index: usize) -> &'a Instruction {
@@ -84,15 +89,69 @@ impl Index<usize> for Bytecode {
     }
 }
 
-impl IndexMut<usize> for Bytecode {
+impl IndexMut<usize> for Function {
     fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Instruction {
         &mut self.instructions[index]
+    }
+}
+
+// bytecode definition
+#[derive(Debug)]
+pub struct Bytecode {
+    functions: HashMap<String, Function>,
+    has_main: bool,
+    has_global: bool,
+    /*
+     * main_file: String,
+     */
+}
+
+impl Bytecode {
+    pub fn new() -> Bytecode {
+        Bytecode {
+            functions: HashMap::new(),
+            has_main: false,
+            has_global: false,
+        }
+    }
+
+    pub fn has_func(&self, func: &String) -> bool {
+        self.functions.contains_key(func)
+    }
+
+    pub fn debug_line(&self, func: String, index: usize) -> usize {
+        self.functions.get(&func).unwrap().debug_line(index)
+    }
+
+    // pushes a function into the bytecode
+    // replaces old function if same name
+    pub fn push(&mut self, func: Function) {
+        self.functions.insert(func.get_name().clone(), func);
+    }
+
+    // main function
+    pub fn set_main(&mut self, mut func: Function) {
+        func.set_name(String::from("[Main]"));
+        self.functions.insert(String::from("[Main]"), func);
+        self.has_main = true;
+    }
+
+    // global function (i.e. Intro block)
+    pub fn set_global(&mut self, mut func: Function) {
+        func.set_name(String::from("[Global]"));
+        self.functions.insert(String::from("[Global]"), func);
+        self.has_global = true;
+    }
+
+    pub fn get_func(&self, name: String) -> Function {
+        self.functions.get(&name).unwrap().clone()
     }
 }
 
 #[derive(Debug)]
 pub struct Compiler {
     ptr: usize,
+    func_ptr: usize,
     raw: Intermediate,
     check_stack: Vec<usize>, // remember lines following those that have check statements
     compiled: Bytecode,
@@ -102,6 +161,7 @@ impl Compiler {
     pub fn new(raw: Intermediate) -> Compiler {
         Compiler {
             ptr: 0,
+            func_ptr: 0,
             raw,
             check_stack: Vec::new(),
             compiled: Bytecode::new(),
@@ -124,77 +184,178 @@ impl Compiler {
         return res;
     }
 
-    pub fn compile(mut self) -> Result<Bytecode, Error> {
+    fn parse_program(&mut self) -> Result<(), Error> {
         while self.has_more() {
-            let statement = self.raw[self.ptr].clone();
-            // compile statement to bytecode
-            use Instruction::*;
+            let block = self.raw[self.ptr].clone();
             use Statement::*;
-            match statement {
-                Say(tokens) => {
-                    self.compiled
-                        .push(Put(tokens), self.raw.debug_line(self.ptr));
+            match block {
+                Chorus() => {
+                    self.parse_main()?;
                 }
-                Statement::Let(varname) => {
-                    self.compiled
-                        .push(Instruction::Let(varname), self.raw.debug_line(self.ptr));
+                Intro() => {
+                    self.parse_global()?;
                 }
-                Assign(varname, tokens) => {
-                    self.compiled
-                        .push(Set(varname, tokens), self.raw.debug_line(self.ptr));
-                }
-                /*
-                 * If compiles to
-                 * 0 jmpif [TRUE] 2 ; if true, jump to start of code
-                 * 1 jmp 5          ; if not true, jump to end of if
-                 * 2 pctx           ; push context
-                 * 3 put 0
-                 * 4 dctx           ; delete context
-                 * 5 end
-                 *
-                 * While compiles to
-                 * 0 jmpif [TRUE] 2 ; if true, jump to start of code
-                 * 1 jmp 6          ; if not true, jump to end of loop
-                 * 2 pctx           ; push context
-                 * 3 put 0
-                 * 4 dctx           ; delete context
-                 * 5 jmp 0          ; jump back to loop start
-                 * 6 end
-                 */
-                Check(tokens) => {
-                    // skip the next line if tokens evaluates to true
-                    self.compiled.push(
-                        Jmpif(tokens, self.compiled.len() + 2),
-                        self.raw.debug_line(self.ptr),
-                    );
-                    // jump to end of loop/if
-                    // we don't know where that is, so put a temporary value for now
-                    self.compiled
-                        .push(Jmp(usize::MAX), self.raw.debug_line(self.ptr));
-                    self.check_stack.push(self.compiled.len() - 1);
-                    // add new context
-                    self.compiled.push(Pctx(), self.raw.debug_line(self.ptr));
-                }
-                WhileEnd() => {
-                    self.compiled.push(Dctx(), self.raw.debug_line(self.ptr)); // pop context
-                    let top = self.check_stack.pop().unwrap(); // pop last check index
-                                                               // jump back to condition checking
-                    self.compiled
-                        .push(Jmp(top - 1), self.raw.debug_line(self.ptr));
-                    // if condition untrue, jump outside of loop
-                    self.compiled[top] = Jmp(self.compiled.len());
-                }
-                IfEnd() => {
-                    self.compiled.push(Dctx(), self.raw.debug_line(self.ptr)); // pop context
-                    let top = self.check_stack.pop().unwrap(); // pop last check index
-                                                               // if condition untrue, jump to end of if statement
-                    self.compiled[top] = Jmp(self.compiled.len());
+                _ => {
+                    return Err(Error::new(
+                        ErrorType::SyntaxError,
+                        "Statement cannot be unblocked",
+                        Some(self.raw.debug_line(self.ptr)),
+                    ));
                 }
             }
-            self.advance();
+            assert!(self.check_stack.is_empty());
+            self.func_ptr = 0;
         }
-        self.compiled.push(Instruction::End(), 0);
-        return Ok(self.compiled);
+        Ok(())
+    }
+
+    // parses the global function ([Intro])
+    fn parse_global(&mut self) -> Result<(), Error> {
+        // pointer at [Intro]
+        self.advance();
+        // make function
+        let mut global: Function = Function::new(String::from("[Global]"));
+        while self.has_more() {
+            let statement = self.raw[self.ptr].clone();
+            match &statement {
+                Statement::Chorus() | Statement::Verse(_) => break,
+                // in the global function, all variables are global
+                Statement::Let(varname) => {
+                    global.push(
+                        Instruction::Glb(varname.clone()),
+                        self.raw.debug_line(self.ptr),
+                    );
+                    self.func_ptr += 1;
+                }
+                _ => self.parse_common(&mut global, statement)?,
+            }
+        }
+        self.compiled.set_global(global);
+        return Ok(());
+    }
+
+    // parses the main function
+    fn parse_main(&mut self) -> Result<(), Error> {
+        // pointer at [Chorus]
+        self.advance();
+        // make function
+        let mut main: Function = Function::new(String::from("[Main]"));
+        while self.has_more() {
+            let statement = self.raw[self.ptr].clone();
+            match statement {
+                Statement::Intro() | Statement::Verse(_) => break,
+                _ => self.parse_common(&mut main, statement)?,
+            }
+        }
+        self.compiled.set_main(main);
+        return Ok(());
+    }
+
+    fn parse_function(&mut self) -> Result<(), Error> {
+        // pointer at [Verse X]
+        let func_name = match self.raw[self.ptr].clone() {
+            Statement::Verse(name) => name,
+            _ => panic!("parse_function() called without being at [Verse]"),
+        };
+        self.advance();
+        // make function
+        let mut func: Function = Function::new(func_name.clone());
+        while self.has_more() {
+            let statement = self.raw[self.ptr].clone();
+            match statement {
+                Statement::Intro() | Statement::Chorus() => break,
+                _ => self.parse_common(&mut func, statement)?,
+            }
+        }
+        self.compiled.push(func);
+        return Ok(());
+    }
+
+    // parse common statement that doesn't vary between functions
+    // advances pointer to next statement
+    fn parse_common(&mut self, function: &mut Function, statement: Statement) -> Result<(), Error> {
+        use Instruction::*;
+        use Statement::*;
+        match statement {
+            // print
+            Say(tokens) => {
+                function.push(Put(tokens), self.raw.debug_line(self.ptr));
+                self.func_ptr += 1;
+            }
+            // let and assign variables
+            Statement::Let(varname) => {
+                function.push(Instruction::Let(varname), self.raw.debug_line(self.ptr));
+                self.func_ptr += 1;
+            }
+            Assign(varname, tokens) => {
+                function.push(Set(varname, tokens), self.raw.debug_line(self.ptr));
+                self.func_ptr += 1;
+            }
+            /*
+             * If compiles to
+             * 0 jmpif [TRUE] 2 ; if true, jump to start of code
+             * 1 jmp 5          ; if not true, jump to end of if
+             * 2 pctx           ; push context
+             * 3 put 0
+             * 4 dctx           ; delete context
+             * 5 end
+             *
+             * While compiles to
+             * 0 jmpif [TRUE] 2 ; if true, jump to start of code
+             * 1 jmp 6          ; if not true, jump to end of loop
+             * 2 pctx           ; push context
+             * 3 put 0
+             * 4 dctx           ; delete context
+             * 5 jmp 0          ; jump back to loop start
+             * 6 end
+             */
+            // while loops and if statements
+            Check(tokens) => {
+                let debug_line = self.raw.debug_line(self.ptr);
+                // skip the next line if tokens evaluates to true
+                function.push(Jmpif(tokens, self.func_ptr + 2), debug_line);
+                self.func_ptr += 1;
+                // jump to end of loop/if
+                // we don't know where that is, so put a temporary value for now
+                function.push(Jmp(usize::MAX), debug_line);
+                self.check_stack.push(self.func_ptr); // store index of jmp(umax)
+                self.func_ptr += 1;
+                // add new context
+                function.push(Pctx(), debug_line);
+                self.func_ptr += 1;
+            }
+            WhileEnd() => {
+                let debug_line = self.raw.debug_line(self.ptr);
+                // delete context
+                function.push(Dctx(), debug_line);
+                self.func_ptr += 1;
+                // jump back to condition checking
+                let top = self.check_stack.pop().unwrap(); // pop last check index
+                function.push(Jmp(top - 1), debug_line);
+                self.func_ptr += 1;
+                // replace temporary index from before
+                function[top] = Jmp(self.func_ptr);
+            }
+            IfEnd() => {
+                let debug_line = self.raw.debug_line(self.ptr);
+                // delete context
+                function.push(Dctx(), debug_line);
+                self.func_ptr += 1;
+                // replace temporary index from before
+                let top = self.check_stack.pop().unwrap(); // pop last check index
+                function[top] = Jmp(self.func_ptr);
+            }
+            _ => panic!("Could not match common statement"),
+        }
+        self.advance();
+        return Ok(());
+    }
+
+    pub fn compile(mut self) -> Result<Bytecode, Error> {
+        match self.parse_program() {
+            Ok(()) => Ok(self.compiled),
+            Err(err) => Err(err),
+        }
     }
 }
 

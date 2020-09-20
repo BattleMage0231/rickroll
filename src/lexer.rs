@@ -6,6 +6,7 @@ use crate::error::*;
 use crate::tokenizer::*;
 use crate::util::*;
 
+use std::collections::HashSet;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, EnumIter, Clone)]
@@ -16,6 +17,10 @@ pub enum Statement {
     Check(Vec<Token>),
     WhileEnd(),
     IfEnd(),
+    // functions
+    Chorus(),
+    Intro(),
+    Verse(String),
 }
 
 // intermediate representation of lexed statements
@@ -86,6 +91,7 @@ pub struct Lexer {
     lexed: Intermediate,
     scope: Scope,
     check_counter: usize,
+    function_cache: HashSet<String>,
 }
 
 impl Lexer {
@@ -109,6 +115,7 @@ impl Lexer {
             lexed: Intermediate::new(),
             scope: Scope::new(),
             check_counter: 0,
+            function_cache: HashSet::new(),
         }
     }
 
@@ -140,7 +147,14 @@ impl Lexer {
             static ref CHECK: Regex = Regex::new("^Inside we both know .+$").unwrap();
             static ref WHILE_END: Regex = Regex::new("^We know the game and we\'re gonna play it$").unwrap();
             static ref IF_END: Regex = Regex::new("^Your heart\'s been aching but you\'re too shy to say it$").unwrap();
+            // blocks (functions)
+            static ref CHORUS: Regex = Regex::new("^\\[Chorus\\]$").unwrap();
+            static ref INTRO: Regex = Regex::new("^\\[Intro\\]$").unwrap();
+            static ref VERSE: Regex = Regex::new("^\\[Verse \\w+\\]$").unwrap();
         }
+        // boolean flags
+        let mut has_chorus = false;
+        let mut has_intro = false;
         // iterate over raw
         while self.has_more() {
             // try to match a statement
@@ -227,6 +241,38 @@ impl Lexer {
                     ));
                 }
                 self.check_counter -= 1;
+            } else if CHORUS.is_match(curln) {
+                if has_chorus {
+                    return Err(Error::new(
+                        ErrorType::SyntaxError,
+                        "Multiple instances of [Chorus]",
+                        Some(self.ptr + 1),
+                    ));
+                }
+                self.lexed.push(Statement::Chorus(), self.ptr + 1);
+                has_chorus = true;
+            } else if INTRO.is_match(curln) {
+                if has_intro {
+                    return Err(Error::new(
+                        ErrorType::SyntaxError,
+                        "Multiple instances of [Intro]",
+                        Some(self.ptr + 1),
+                    ));
+                }
+                self.lexed.push(Statement::Intro(), self.ptr + 1);
+                has_intro = true;
+            } else if VERSE.is_match(curln) {
+                // ^\\[Verse \\w+\\]$
+                let func_name = String::from(curln[7..(curln.len() - 1)].trim());
+                if self.function_cache.contains(&func_name) {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &(format!("Function {} already exists", func_name))[..],
+                        Some(self.ptr + 1),
+                    ));
+                }
+                self.function_cache.insert(func_name.clone());
+                self.lexed.push(Statement::Verse(func_name), self.ptr + 1);
             } else {
                 // unknown statement
                 return Err(Error::new(
@@ -248,6 +294,7 @@ impl Lexer {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,3 +383,4 @@ mod tests {
         );
     }
 }
+*/

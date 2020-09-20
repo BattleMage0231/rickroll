@@ -11,6 +11,7 @@ pub struct Interpreter {
     ptr: usize,
     bytecode: Bytecode,
     scope: Scope, // global scope -> scope1... -> current scope
+    function_stack: Vec<String>,
 }
 
 impl Interpreter {
@@ -19,6 +20,7 @@ impl Interpreter {
             ptr: 0,
             bytecode,
             scope: Scope::new(),
+            function_stack: Vec::new(),
         }
     }
 
@@ -26,16 +28,16 @@ impl Interpreter {
         self.ptr += 1;
     }
 
-    pub fn has_more(&self) -> bool {
-        self.ptr < self.bytecode.len()
-    }
-
     // wraps a traceback around a possible error
     fn wrap_check<T>(&self, res: Result<T, Error>) -> Result<T, Error> {
         if let Err(error) = res {
             return Err(Error::traceback(
                 error,
-                Some(self.bytecode.debug_line(self.ptr)),
+                Some(
+                    self.bytecode
+                        .get_func(self.function_stack.last().unwrap().clone())
+                        .debug_line(self.ptr),
+                ),
             ));
         }
         return res;
@@ -47,15 +49,22 @@ impl Interpreter {
         return self.wrap_check(parser.eval());
     }
 
-    // takes in a mutable buffer and reader rather than
-    // writing to stdout and reading from stdin
-    pub fn run<W, R>(mut self, mut buffer: W, mut reader: R) -> Result<RickrollObject, Error>
+    // executes a function
+    pub fn run<W, R>(
+        &mut self,
+        func: String,
+        buffer: &mut W,
+        reader: &mut R,
+    ) -> Result<RickrollObject, Error>
     where
         W: Write,
         R: BufRead,
     {
-        while self.has_more() {
-            let opcode = &self.bytecode[self.ptr];
+        self.ptr = 0; // reset function pointer
+        let function = self.bytecode.get_func(func.clone()); // get function bytecode
+        self.function_stack.push(func.clone()); // push function name to stack
+        while self.ptr < function.len() {
+            let opcode = &function[self.ptr];
             use Instruction::*;
             match opcode {
                 Put(tokens) => {
@@ -65,12 +74,14 @@ impl Interpreter {
                 Let(varname) => {
                     self.scope.add_var(varname.clone());
                 }
+                Glb(varname) => {
+                    self.scope
+                        .get_global()
+                        .set_var(varname.clone(), RickrollObject::Undefined);
+                }
                 Set(varname, tokens) => {
                     let val = self.eval(tokens.clone())?;
                     self.scope.set_var(varname.clone(), val);
-                }
-                End() => {
-                    return Ok(RickrollObject::Undefined);
                 }
                 Jmp(dest) => {
                     self.ptr = *dest;
@@ -85,7 +96,7 @@ impl Interpreter {
                             return Err(Error::new(
                                 ErrorType::IllegalArgumentError,
                                 "Unexpected non-boolean argument",
-                                Some(self.bytecode.debug_line(self.ptr)),
+                                Some(function.debug_line(self.ptr)),
                             ))
                         }
                     };
@@ -100,16 +111,24 @@ impl Interpreter {
                 Dctx() => {
                     self.scope.pop();
                 }
-                Tmp() => {
-                    panic!("Unexpected Tmp() on line {}", self.ptr);
-                }
             }
             self.advance();
         }
         return Ok(RickrollObject::Undefined);
     }
+
+    // takes in a mutable buffer and reader rather than
+    // writing to stdout and reading from stdin
+    pub fn execute<W, R>(&mut self, mut buffer: W, mut reader: R) -> Result<RickrollObject, Error>
+    where
+        W: Write,
+        R: BufRead,
+    {
+        return self.run(String::from("[Main]"), &mut buffer, &mut reader);
+    }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::Operator::*;
@@ -277,3 +296,4 @@ mod tests {
         )
     }
 }
+*/
