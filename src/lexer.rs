@@ -158,10 +158,10 @@ impl Lexer {
                 }
                 args.push(cur.to_owned());
                 // check variable exists
-                if !self.function_cache.contains_key(&cur) {
+                if self.function_cache.contains_key(&cur) {
                     return Err(Error::new(
                         ErrorType::NameError,
-                        &(format!("Variable {} not found", cur))[..],
+                        &(format!("Variable {} already exists in another scope", cur))[..],
                         Some(self.ptr + 1),
                     ));
                 }
@@ -182,10 +182,10 @@ impl Lexer {
         if !cur.is_empty() {
             args.push(cur.to_owned());
             // check variable exists
-            if !self.function_cache.contains_key(&cur) {
+            if self.function_cache.contains_key(&cur) {
                 return Err(Error::new(
                     ErrorType::NameError,
-                    &(format!("Variable {} not found", cur))[..],
+                    &(format!("Variable {} already exists in another scope", cur))[..],
                     Some(self.ptr + 1),
                 ));
             }
@@ -315,6 +315,9 @@ impl Lexer {
                 }
                 self.lexed.push(Statement::Chorus(), self.ptr + 1);
                 has_chorus = true;
+                self.scope.behead(); // behead scope for new function
+                self.scope.push(Context::new()); // push new context for function
+                self.function_cache.insert(String::from("[Main]"), 0);
             } else if INTRO.is_match(curln) {
                 if has_intro {
                     return Err(Error::new(
@@ -324,7 +327,9 @@ impl Lexer {
                     ));
                 }
                 self.lexed.push(Statement::Intro(), self.ptr + 1);
+                self.scope.behead(); // behead scope for new function (no need to push new context)
                 has_intro = true;
+                self.function_cache.insert(String::from("[Global]"), 0);
             } else if VERSE.is_match(curln) {
                 // ^\\[Verse \\w+\\]$
                 let func_name = String::from(&curln[7..(curln.len() - 1)]);
@@ -335,7 +340,9 @@ impl Lexer {
                         Some(self.ptr + 1),
                     ));
                 }
-                // now we have to read parameters
+                self.scope.behead(); // behead scope for new function
+                self.scope.push(Context::new()); // push new context for function
+                                                 // now we have to read parameters
                 self.advance();
                 let curln = self.raw[self.ptr].trim();
                 if !self.has_more() || !ARGS.is_match(curln) {
@@ -350,6 +357,16 @@ impl Lexer {
                 // push function
                 self.function_cache
                     .insert(func_name.clone(), func_args.len());
+                for varname in &func_args {
+                    if self.scope.has_var(varname.clone()) {
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &(format!("Local variable {} already exists globally", varname))[..],
+                            Some(self.ptr + 1),
+                        ));
+                    }
+                    self.scope.add_var(varname.clone());
+                }
                 self.lexed
                     .push(Statement::Verse(func_name, func_args), self.ptr + 1);
             } else if RUN.is_match(curln) {
@@ -395,7 +412,7 @@ impl Lexer {
                         Some(self.ptr + 1),
                     ));
                 }
-                let substring = String::from(&substring[18..]); // \\w+ and desert .+$
+                let substring = String::from(&substring[(ind + 18)..]); // \\w+ and desert .+$
                 let ind = substring.find(' ').unwrap();
                 // get function info
                 let func_name = String::from(&substring[..ind]);

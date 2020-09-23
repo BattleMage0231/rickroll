@@ -132,6 +132,14 @@ impl Bytecode {
         }
     }
 
+    pub fn has_main(&self) -> bool {
+        self.has_main
+    }
+
+    pub fn has_global(&self) -> bool {
+        self.has_global
+    }
+
     pub fn has_func(&self, func: &String) -> bool {
         self.functions.contains_key(func)
     }
@@ -235,6 +243,8 @@ impl Compiler {
         self.advance();
         // make function
         let mut global: Function = Function::new(String::from("[Global]"), Vec::new());
+        global.push(Instruction::Pctx(), 0); // new context
+        self.func_ptr += 1;
         while self.has_more() {
             let statement = self.raw[self.ptr].clone();
             match &statement {
@@ -249,7 +259,10 @@ impl Compiler {
                 }
                 _ => self.parse_common(&mut global, statement)?,
             }
+            self.advance();
         }
+        global.push(Instruction::Dctx(), 0); // pop context
+        self.func_ptr += 1;
         self.compiled.set_global(global);
         return Ok(());
     }
@@ -260,13 +273,18 @@ impl Compiler {
         self.advance();
         // make function
         let mut main: Function = Function::new(String::from("[Main]"), Vec::new());
+        main.push(Instruction::Pctx(), 0); // new context
+        self.func_ptr += 1;
         while self.has_more() {
             let statement = self.raw[self.ptr].clone();
             match statement {
                 Statement::Intro() | Statement::Verse(_, _) => break,
                 _ => self.parse_common(&mut main, statement)?,
             }
+            self.advance();
         }
+        main.push(Instruction::Dctx(), 0); // pop context
+        self.func_ptr += 1;
         self.compiled.set_main(main);
         return Ok(());
     }
@@ -276,13 +294,17 @@ impl Compiler {
         let func_sig = match self.raw[self.ptr].clone() {
             Statement::Verse(name, args) => (name, args),
             _ => panic!("parse_function() called without being at [Verse]"),
-        }; 
+        };
         let (func_name, func_args) = func_sig;
         self.advance();
         // make function
         let mut func: Function = Function::new(func_name.clone(), func_args.clone());
+        func.push(Instruction::Pctx(), 0); // new context
+        self.func_ptr += 1;
         for var in func_args {
+            // expect arguments
             func.push(Instruction::Exp(var), self.raw.debug_line(self.ptr));
+            self.func_ptr += 1;
         }
         while self.has_more() {
             let statement = self.raw[self.ptr].clone();
@@ -290,7 +312,10 @@ impl Compiler {
                 Statement::Intro() | Statement::Chorus() => break,
                 _ => self.parse_common(&mut func, statement)?,
             }
+            self.advance();
         }
+        func.push(Instruction::Dctx(), 0); // pop context
+        self.func_ptr += 1;
         self.compiled.push(func);
         return Ok(());
     }
@@ -393,7 +418,6 @@ impl Compiler {
                 self.func_ptr += 1;
             }
         }
-        self.advance();
         return Ok(());
     }
 
@@ -407,6 +431,7 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
+    /*
     use super::*;
     use crate::tokenizer::Token::*;
     use crate::util::{Operator::*, RickrollObject::*};
@@ -447,5 +472,5 @@ mod tests {
             vec![(1, Let(String::from("a"))), (2, Assign(String::from("a"), vec![Value(Int(5))])), (3, Check(vec![Variable(String::from("a")), Operator(Equals), Value(Int(5))])), (4, Say(vec![Value(Bool(true))])), (5, IfEnd())],
             "Ok(Bytecode { instructions: [Let(\"a\"), Set(\"a\", [Value(Int(5))]), Jmpif([Variable(\"a\"), Operator(Equals), Value(Int(5))], 4), Jmp(7), Pctx, Put([Value(Bool(true))]), Dctx, End], debug_lines: [1, 2, 3, 3, 3, 4, 5, 0] })",
         );
-    }
+    }*/
 }

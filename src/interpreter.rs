@@ -4,14 +4,17 @@ use crate::parser::Parser;
 use crate::tokenizer::Token;
 use crate::util::*;
 
-use std::io::{BufRead, Write};
 use std::collections::VecDeque;
+use std::io::{BufRead, Write};
+
+pub const MAX_RECURSION_DEPTH: usize = 8000;
 
 #[derive(Debug)]
 pub struct Interpreter {
     bytecode: Bytecode,
-    scope: Scope, // global scope -> scope1... -> current scope
-    function_stack: Vec<String>, // function call stack
+    scope: Scope,                        // global scope -> scope1... -> current scope
+    function_stack: Vec<String>,         // function call stack
+    context_stack: Vec<Vec<Context>>,    // context stack for function calls
     arg_queue: VecDeque<RickrollObject>, // function argument queue
 }
 
@@ -21,6 +24,7 @@ impl Interpreter {
             bytecode,
             scope: Scope::new(),
             function_stack: Vec::new(),
+            context_stack: Vec::new(),
             arg_queue: VecDeque::new(),
         }
     }
@@ -57,6 +61,13 @@ impl Interpreter {
         W: Write,
         R: BufRead,
     {
+        if self.function_stack.len() >= MAX_RECURSION_DEPTH {
+            return Err(Error::new(
+                ErrorType::StackOverflowError,
+                &(format!("Too many recursive calls for function {}", func))[..],
+                Some(self.bytecode.get_func(func.clone()).debug_line(0)),
+            ));
+        }
         // push current function to stack
         self.function_stack.push(func.clone());
         let mut ptr = 0; // function ptr
@@ -110,44 +121,86 @@ impl Interpreter {
                     self.scope.pop();
                 }
                 Call(func) => {
-                    match self.run(func.clone(), buffer, reader) {
-                        Err(err) => return Err(Error::traceback(err, Some(function.debug_line(ptr)))),
+                    self.context_stack.push(self.scope.behead()); // store current state
+                    let res = self.run(func.clone(), buffer, reader); // call function
+                                                                      // recursive calls should automatically clean up scope
+                    assert!(
+                        self.scope.len() == 1,
+                        "Scope has more than one context after function call"
+                    );
+                    self.scope.push_all(self.context_stack.pop().unwrap()); // return state to scope
+                    match res {
+                        // recursively run function
+                        Err(err) => {
+                            return Err(Error::traceback(err, Some(function.debug_line(ptr))))
+                        }
                         Ok(_) => (),
                     }
                 }
-                Scall(func, varname) => {
-                    match self.run(func.clone(), buffer, reader) {
-                        Err(err) => return Err(Error::traceback(err, Some(function.debug_line(ptr)))),
-                        Ok(obj) => self.scope.set_var(varname.clone(), obj),
+                Scall(varname, func) => {
+                    self.context_stack.push(self.scope.behead()); // store current state
+                    let res = self.run(func.clone(), buffer, reader); // call function
+                                                                      // recursive calls should automatically clean up scope
+                    assert!(
+                        self.scope.len() == 1,
+                        "Scope has more than one context after function call"
+                    );
+                    self.scope.push_all(self.context_stack.pop().unwrap()); // return state to scope
+                    match res {
+                        // recursively run function
+                        Err(err) => {
+                            return Err(Error::traceback(err, Some(function.debug_line(ptr))))
+                        }
+                        Ok(obj) => {
+                            self.scope.set_var(varname.clone(), obj); // set variable to return value
+                        }
                     }
                 }
                 Ret(tokens) => {
-                    return match self.eval(tokens.clone(), ptr) {
-                        Err(err) => Err(Error::traceback(err, Some(function.debug_line(ptr)))),
-                        Ok(obj) => Ok(obj),
+                    let result = self.eval(tokens.clone(), ptr); // eval result
+                                                                 // traceback error
+                    if let Err(err) = result {
+                        return Err(Error::traceback(err, Some(function.debug_line(ptr))));
                     }
+                    self.scope.behead(); // remove all contexts except for global
+                    return result;
                 }
                 Pushq(var) => {
-                    self.arg_queue.push_back(self.scope.get_var(var.clone()).unwrap());
+                    self.arg_queue
+                        .push_back(self.scope.get_var(var.clone()).unwrap());
                 }
                 Exp(var) => {
                     self.scope.add_var(var.clone());
-                    self.scope.set_var(var.clone(), self.arg_queue.pop_front().unwrap());
+                    self.scope
+                        .set_var(var.clone(), self.arg_queue.pop_front().unwrap());
                 }
             }
             ptr += 1; // increment pointer
         }
+        self.scope.behead(); // remove all contexts except for global
         return Ok(RickrollObject::Undefined);
     }
 
     // takes in a mutable buffer and reader rather than
     // writing to stdout and reading from stdin
-    pub fn execute<W, R>(&mut self, mut buffer: W, mut reader: R) -> Result<RickrollObject, Error>
+    pub fn execute<W, R>(mut self, mut buffer: W, mut reader: R) -> Result<RickrollObject, Error>
     where
         W: Write,
         R: BufRead,
     {
-        return self.run(String::from("[Main]"), &mut buffer, &mut reader);
+        // must have a main to execute
+        if !self.bytecode.has_main() {
+            return Err(Error::new(
+                ErrorType::RuntimeError,
+                "Could not find a [Chorus] to execute",
+                None,
+            ));
+        }
+        // global is optional
+        if self.bytecode.has_global() {
+            self.run(String::from("[Global]"), &mut buffer, &mut reader)?; // execute global
+        }
+        return self.run(String::from("[Main]"), &mut buffer, &mut reader); // execute main
     }
 }
 

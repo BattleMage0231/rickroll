@@ -10,6 +10,7 @@ pub enum ErrorType {
     FileError,
     NameError,
     Traceback,
+    StackOverflowError,
 }
 
 // get name from enum member
@@ -26,6 +27,7 @@ impl ErrorType {
             FileError => "File Error",
             NameError => "Name Error",
             Traceback => "Traceback",
+            StackOverflowError => "Stack Overflow",
         }
         .to_string()
     }

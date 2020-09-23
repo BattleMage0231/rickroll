@@ -131,6 +131,19 @@ impl Scope {
         self.contexts.push(context);
     }
 
+    pub fn push_all(&mut self, mut contexts: Vec<Context>) {
+        self.contexts.append(&mut contexts);
+    }
+
+    pub fn behead(&mut self) -> Vec<Context> {
+        if self.contexts.is_empty() {
+            panic!("Empty scope cannot be beheaded");
+        }
+        let tail = Vec::from(&self.contexts[1..]);
+        self.contexts.truncate(1);
+        return tail;
+    }
+
     pub fn get_global(&mut self) -> &mut Context {
         self.contexts.first_mut().unwrap()
     }
