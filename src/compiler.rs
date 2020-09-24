@@ -189,7 +189,9 @@ impl Display for Bytecode {
                     Glb(varname) => format!("glb  \t{}", varname),
                     Set(varname, tokens) => format!("set  \t{}\t{:?}", varname, tokens),
                     Jmp(line) => format!("jmp  \t{}", format!("{:0>3}", line)),
-                    Jmpif(tokens, line) => format!("jmpif\t{:?}\t{}", tokens, format!("{:0>3}", line)),
+                    Jmpif(tokens, line) => {
+                        format!("jmpif\t{:?}\t{}", tokens, format!("{:0>3}", line))
+                    }
                     Pctx() => format!("pctx \t"),
                     Dctx() => format!("dctx \t"),
                     Call(func) => format!("call \t{}", func),

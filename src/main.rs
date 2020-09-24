@@ -2,10 +2,14 @@ use rickroll::compiler::*;
 use rickroll::interpreter::*;
 use rickroll::lexer::*;
 
+use std::env::args;
 use std::io::*;
 
 fn main() {
-    let raw = "\
+    let mut arguments = args();
+    arguments.next();
+    let raw = format!(
+        "\
 [Verse fib]
 (Ooh give you a)
 Inside we both know a <= 1
@@ -21,13 +25,15 @@ Never gonna give c a - 2
 
 [Chorus]
 Never gonna let a down
-Never gonna give a 10
+Never gonna give a {}
 (Ooh give you a) Never gonna run fib and desert a
 Never gonna say a
-    ";
+    ",
+        arguments.next().unwrap()
+    );
     println!("\"{}\"", raw);
     eprintln!("\x1b[0;31mStarted lexing...\x1b[0m");
-    let lexer = Lexer::new(String::from(raw));
+    let lexer = Lexer::new(raw);
     let ir = lexer.parse().unwrap();
     println!("{:?}", ir);
     eprintln!("\x1b[0;31mFinished lexing...\x1b[0m");

@@ -140,7 +140,7 @@ impl Lexer {
     }
 
     // helper function splitting a string of the form "A, BCD, EEE" into ["A", "BCD", "EEE"]
-    fn split_vars(&self, raw: String) -> Result<Vec<String>, Error> {
+    fn split_vars(&self, raw: String, empty: String) -> Result<Vec<String>, Error> {
         let mut args: Vec<String> = Vec::new();
         let mut cur: String = String::new();
         for chr in String::from(raw.trim()).chars() {
@@ -175,8 +175,8 @@ impl Lexer {
                 ));
             }
         }
-        // keyword up returns no arguments
-        if cur == String::from("up") {
+        // empty returns no arguments
+        if cur == empty {
             return Ok(Vec::new());
         }
         if !cur.is_empty() {
@@ -353,7 +353,10 @@ impl Lexer {
                     ));
                 }
                 // "\\(Ooh give you .+\\)"
-                let func_args = self.split_vars(String::from(&curln[14..(curln.len() - 1)]))?;
+                let func_args = self.split_vars(
+                    String::from(&curln[14..(curln.len() - 1)]),
+                    String::from("up"),
+                )?;
                 // push function
                 self.function_cache
                     .insert(func_name.clone(), func_args.len());
@@ -375,7 +378,8 @@ impl Lexer {
                 let ind = substring.find(' ').unwrap();
                 // get function info
                 let func_name = String::from(&substring[..ind]);
-                let func_args = self.split_vars(String::from(&substring[(ind + 12)..]))?;
+                let func_args =
+                    self.split_vars(String::from(&substring[(ind + 12)..]), String::from("you"))?;
                 // function must exist
                 if !self.function_cache.contains_key(&func_name) {
                     return Err(Error::new(
@@ -416,7 +420,8 @@ impl Lexer {
                 let ind = substring.find(' ').unwrap();
                 // get function info
                 let func_name = String::from(&substring[..ind]);
-                let func_args = self.split_vars(String::from(&substring[(ind + 12)..]))?;
+                let func_args =
+                    self.split_vars(String::from(&substring[(ind + 12)..]), String::from("you"))?;
                 // function must exist
                 if !self.function_cache.contains_key(&func_name) {
                     return Err(Error::new(
