@@ -1,4 +1,4 @@
-use crate::compiler::{Bytecode, Instruction};
+use crate::compiler::{Bytecode, Function, Instruction};
 use crate::error::*;
 use crate::parser::Parser;
 use crate::tokenizer::Token;
@@ -7,47 +7,52 @@ use crate::util::*;
 use std::collections::VecDeque;
 use std::io::{BufRead, Write};
 
-pub const MAX_RECURSION_DEPTH: usize = 8000;
+pub const MAX_RECURSION_DEPTH: usize = 10000;
+pub const MAX_UNWIND_LIMIT: usize = 8;
 
 #[derive(Debug)]
 pub struct Interpreter {
     bytecode: Bytecode,
-    scope: Scope,                        // global scope -> scope1... -> current scope
-    function_stack: Vec<String>,         // function call stack
-    context_stack: Vec<Vec<Context>>,    // context stack for function calls
-    arg_queue: VecDeque<RickrollObject>, // function argument queue
+    scope: Scope,                           // global scope -> scope1... -> current scope
+    function_stack: Vec<(Function, usize)>, // function call stack
+    context_stack: Vec<Vec<Context>>,       // context for function calls
+    arg_queue: VecDeque<RickrollObject>,    // function argument queue
 }
 
 impl Interpreter {
     pub fn new(bytecode: Bytecode) -> Interpreter {
         Interpreter {
             bytecode,
-            scope: Scope::new(),
+            scope: Scope::new(), // global scope is constructed inside Scope::new
             function_stack: Vec::new(),
             context_stack: Vec::new(),
             arg_queue: VecDeque::new(),
         }
     }
 
-    // wraps a traceback around a possible error
-    fn wrap_check<T>(&self, res: Result<T, Error>, ptr: usize) -> Result<T, Error> {
-        if let Err(error) = res {
-            return Err(Error::traceback(
-                error,
-                Some(
-                    self.bytecode
-                        .get_func(self.function_stack.last().unwrap().clone())
-                        .debug_line(ptr),
-                ),
-            ));
+    // displays debug info
+    fn unwind_stack(&mut self, err: Error) -> Error {
+        let mut unwind_count = 0;
+        let mut err = err;
+        while !self.function_stack.is_empty() {
+            let (func, line) = self.function_stack.pop().unwrap();
+            if line >= func.len() || func.debug_line(line) == 0 {
+                err = Error::traceback(err, None);
+            } else {
+                err = Error::traceback(err, Some(func.debug_line(line)));
+            }
+            unwind_count += 1;
+            if unwind_count > MAX_UNWIND_LIMIT {
+                break;
+            }
         }
-        return res;
+        return err;
     }
 
     // evaluates an expression using the parser and error-wraps its result
-    fn eval(&self, tokens: Vec<Token>, ptr: usize) -> Result<RickrollObject, Error> {
+    fn eval(&self, tokens: Vec<Token>) -> Result<RickrollObject, Error> {
         let parser = Parser::new(tokens, self.scope.clone());
-        return self.wrap_check(parser.eval(), ptr);
+        return parser.eval();
     }
 
     // executes a function
@@ -61,23 +66,26 @@ impl Interpreter {
         W: Write,
         R: BufRead,
     {
-        if self.function_stack.len() >= MAX_RECURSION_DEPTH {
-            return Err(Error::new(
-                ErrorType::StackOverflowError,
-                &(format!("Too many recursive calls for function {}", func))[..],
-                Some(self.bytecode.get_func(func.clone()).debug_line(0)),
-            ));
-        }
-        // push current function to stack
-        self.function_stack.push(func.clone());
-        let mut ptr = 0; // function ptr
-        let function = self.bytecode.get_func(func.clone()); // get function bytecode
-        while ptr < function.len() {
+        let mut function = self.bytecode.get_func(func.clone()); // get function bytecode
+        self.function_stack.push((function.clone(), 0)); // push current function to stack
+        let mut ptr = 0;
+        loop {
+            // stack overflow
+            if self.function_stack.len() >= MAX_RECURSION_DEPTH {
+                return Err(Error::new(
+                    ErrorType::StackOverflowError,
+                    &(format!(
+                        "Too many recursive calls for function {}",
+                        function.get_name()
+                    ))[..],
+                    Some(self.bytecode.get_func(func.clone()).debug_line(0)),
+                ));
+            }
             let opcode = &function[ptr];
             use Instruction::*;
             match opcode {
                 Put(tokens) => {
-                    writeln!(buffer, "{}", self.eval(tokens.clone(), ptr)?)
+                    writeln!(buffer, "{}", self.eval(tokens.clone())?)
                         .expect("Error when writing to buffer");
                 }
                 Let(varname) => {
@@ -89,7 +97,7 @@ impl Interpreter {
                         .set_var(varname.clone(), RickrollObject::Undefined);
                 }
                 Set(varname, tokens) => {
-                    let val = self.eval(tokens.clone(), ptr)?;
+                    let val = self.eval(tokens.clone())?;
                     self.scope.set_var(varname.clone(), val);
                 }
                 Jmp(dest) => {
@@ -98,7 +106,7 @@ impl Interpreter {
                 }
                 Jmpif(tokens, dest) => {
                     // jump??
-                    let val = self.eval(tokens.clone(), ptr)?;
+                    let val = self.eval(tokens.clone())?;
                     let jump = match val {
                         RickrollObject::Bool(x) => x,
                         _ => {
@@ -106,7 +114,7 @@ impl Interpreter {
                                 ErrorType::IllegalArgumentError,
                                 "Unexpected non-boolean argument",
                                 Some(function.debug_line(ptr)),
-                            ))
+                            ));
                         }
                     };
                     if jump {
@@ -121,49 +129,39 @@ impl Interpreter {
                     self.scope.pop();
                 }
                 Call(func) => {
+                    self.function_stack.last_mut().unwrap().1 = ptr;
                     self.context_stack.push(self.scope.behead()); // store current state
-                    let res = self.run(func.clone(), buffer, reader); // call function
-                                                                      // recursive calls should automatically clean up scope
-                    assert!(
-                        self.scope.len() == 1,
-                        "Scope has more than one context after function call"
-                    );
-                    self.scope.push_all(self.context_stack.pop().unwrap()); // return state to scope
-                    match res {
-                        // recursively run function
-                        Err(err) => {
-                            return Err(Error::traceback(err, Some(function.debug_line(ptr))))
-                        }
-                        Ok(_) => (),
-                    }
+                    function = self.bytecode.get_func(func.clone()); // replace function
+                    ptr = 0;
+                    self.function_stack.push((function.clone(), 0));
+                    continue;
                 }
-                Scall(varname, func) => {
+                Scall(_, func) => {
+                    self.function_stack.last_mut().unwrap().1 = ptr;
                     self.context_stack.push(self.scope.behead()); // store current state
-                    let res = self.run(func.clone(), buffer, reader); // call function
-                                                                      // recursive calls should automatically clean up scope
-                    assert!(
-                        self.scope.len() == 1,
-                        "Scope has more than one context after function call"
-                    );
-                    self.scope.push_all(self.context_stack.pop().unwrap()); // return state to scope
-                    match res {
-                        // recursively run function
-                        Err(err) => {
-                            return Err(Error::traceback(err, Some(function.debug_line(ptr))))
-                        }
-                        Ok(obj) => {
-                            self.scope.set_var(varname.clone(), obj); // set variable to return value
-                        }
-                    }
+                    function = self.bytecode.get_func(func.clone());
+                    ptr = 0;
+                    self.function_stack.push((function.clone(), 0));
+                    continue;
                 }
                 Ret(tokens) => {
-                    let result = self.eval(tokens.clone(), ptr); // eval result
-                                                                 // traceback error
-                    if let Err(err) = result {
-                        return Err(Error::traceback(err, Some(function.debug_line(ptr))));
-                    }
+                    let result = self.eval(tokens.clone())?; // eval result
                     self.scope.behead(); // remove all contexts except for global
-                    return result;
+                    self.function_stack.pop(); // pop current function
+                                               // no more functions
+                    if self.function_stack.is_empty() {
+                        return Ok(result);
+                    }
+                    self.scope.push_all(self.context_stack.pop().unwrap()); // repush contexts
+                                                                            // replace function and ptr with last value
+                    let last = self.function_stack.last().unwrap();
+                    function = last.0.clone();
+                    ptr = last.1;
+                    // check for scall
+                    if let Scall(varname, _) = function[ptr].clone() {
+                        // set variable
+                        self.scope.set_var(varname, result);
+                    }
                 }
                 Pushq(var) => {
                     self.arg_queue
@@ -175,10 +173,18 @@ impl Interpreter {
                         .set_var(var.clone(), self.arg_queue.pop_front().unwrap());
                 }
             }
+            /* debug
+            let mut test = Vec::new();
+            for x in self.function_stack.iter() {
+                let (func, line) = x.clone();
+                test.push((func.get_name().clone(), line));
+            }
+            test.last_mut().unwrap().1 = ptr;
+            println!("{:?}", test);
+            println!("{:?}\n", self.scope);
+            */
             ptr += 1; // increment pointer
         }
-        self.scope.behead(); // remove all contexts except for global
-        return Ok(RickrollObject::Undefined);
     }
 
     // takes in a mutable buffer and reader rather than
@@ -198,9 +204,21 @@ impl Interpreter {
         }
         // global is optional
         if self.bytecode.has_global() {
-            self.run(String::from("[Global]"), &mut buffer, &mut reader)?; // execute global
+            // run global
+            match self.run(String::from("[Global]"), &mut buffer, &mut reader) {
+                Err(error) => {
+                    return Err(self.unwind_stack(error));
+                }
+                Ok(_) => (),
+            }
         }
-        return self.run(String::from("[Main]"), &mut buffer, &mut reader); // execute main
+        // run main
+        return match self.run(String::from("[Main]"), &mut buffer, &mut reader) {
+            Err(error) => {
+                return Err(self.unwind_stack(error));
+            }
+            Ok(obj) => Ok(obj),
+        };
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::lexer::{Intermediate, Statement};
 use crate::tokenizer::Token;
+use crate::util::RickrollObject;
 
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
@@ -263,6 +264,13 @@ impl Compiler {
         }
         global.push(Instruction::Dctx(), 0); // pop context
         self.func_ptr += 1;
+        // default return
+        global.push(
+            Instruction::Ret(vec![Token::Value(RickrollObject::Undefined)]),
+            0,
+        );
+        self.func_ptr += 1;
+        // set global
         self.compiled.set_global(global);
         return Ok(());
     }
@@ -285,6 +293,13 @@ impl Compiler {
         }
         main.push(Instruction::Dctx(), 0); // pop context
         self.func_ptr += 1;
+        // default return
+        main.push(
+            Instruction::Ret(vec![Token::Value(RickrollObject::Undefined)]),
+            0,
+        );
+        self.func_ptr += 1;
+        // set main
         self.compiled.set_main(main);
         return Ok(());
     }
@@ -316,6 +331,13 @@ impl Compiler {
         }
         func.push(Instruction::Dctx(), 0); // pop context
         self.func_ptr += 1;
+        // default return
+        func.push(
+            Instruction::Ret(vec![Token::Value(RickrollObject::Undefined)]),
+            0,
+        );
+        self.func_ptr += 1;
+        // add function
         self.compiled.push(func);
         return Ok(());
     }

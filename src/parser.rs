@@ -152,14 +152,18 @@ pub fn eval_binary(
             (Float(x), Float(y)) => Ok(Bool(x == y)),
             (Int(x), Float(y)) => Ok(Bool(*x as f32 == *y)),
             (Float(x), Int(y)) => Ok(Bool(*x == *y as f32)),
-            _ => Err(err_binary("Equals", first, second)),
+            (Bool(x), Bool(y)) => Ok(Bool(x ^ y)),
+            (Char(x), Char(y)) => Ok(Bool(x == y)),
+            _ => Ok(Bool(false)), // default false
         },
         NotEquals => match (first, second) {
             (Int(x), Int(y)) => Ok(Bool(x != y)),
             (Float(x), Float(y)) => Ok(Bool(x != y)),
             (Int(x), Float(y)) => Ok(Bool(*x as f32 != *y)),
             (Float(x), Int(y)) => Ok(Bool(*x != *y as f32)),
-            _ => Err(err_binary("Not equals", first, second)),
+            (Bool(x), Bool(y)) => Ok(Bool(!(x ^ y))),
+            (Char(x), Char(y)) => Ok(Bool(x != y)),
+            _ => Ok(Bool(true)), // default true
         },
         _ => panic!(format!("Operator {:?} is not binary!", op)),
     };
