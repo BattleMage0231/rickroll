@@ -4,6 +4,7 @@ use crate::tokenizer::Token;
 use crate::util::RickrollObject;
 
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::ops::{Index, IndexMut};
 
 // bytecode instruction
@@ -171,6 +172,37 @@ impl Bytecode {
 
     pub fn get_func(&self, name: String) -> Function {
         self.functions.get(&name).unwrap().clone()
+    }
+}
+
+impl Display for Bytecode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut res = String::new();
+        for (name, func) in self.functions.iter() {
+            res.push_str(&format!("function {}\n", name)[..]);
+            for i in 0..(func.len()) {
+                res.push_str(&format!("  {:0>3}\t", i)[..]);
+                use Instruction::*;
+                let curln = match &func[i] {
+                    Put(tokens) => format!("put  \t{:?}", tokens),
+                    Let(varname) => format!("let  \t{}", varname),
+                    Glb(varname) => format!("glb  \t{}", varname),
+                    Set(varname, tokens) => format!("set  \t{}\t{:?}", varname, tokens),
+                    Jmp(line) => format!("jmp  \t{}", format!("{:0>3}", line)),
+                    Jmpif(tokens, line) => format!("jmpif\t{:?}\t{}", tokens, format!("{:0>3}", line)),
+                    Pctx() => format!("pctx \t"),
+                    Dctx() => format!("dctx \t"),
+                    Call(func) => format!("call \t{}", func),
+                    Scall(varname, func) => format!("scall\t{}\t{}", varname, func),
+                    Ret(tokens) => format!("ret  \t{:?}", tokens),
+                    Pushq(varname) => format!("pushq \t{}", varname),
+                    Exp(varname) => format!("exp  \t{}", varname),
+                };
+                res.push_str(&curln[..]);
+                res.push('\n');
+            }
+        }
+        write!(f, "{}", res)
     }
 }
 

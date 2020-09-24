@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 // all native error types
 #[derive(Debug)]
 pub enum ErrorType {
@@ -70,7 +72,7 @@ impl Error {
     }
 }
 
-impl std::fmt::Display for Error {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut res = String::new();
         // child if traceback

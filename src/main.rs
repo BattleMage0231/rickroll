@@ -34,7 +34,7 @@ Never gonna say a
     eprintln!("\x1b[0;31mStarted compiling...\x1b[0m");
     let compiler = Compiler::new(ir);
     let compiled = compiler.compile().unwrap();
-    println!("{:#?}", compiled);
+    println!("{}", compiled);
     eprintln!("\x1b[0;31mFinished compiling...\x1b[0m");
     eprintln!("\x1b[0;31mStarted interpreting...\x1b[0m");
     let interpreter = Interpreter::new(compiled);
