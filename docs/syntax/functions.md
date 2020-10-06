@@ -1,7 +1,4 @@
 # Functions
-- Verse Blocks and Execution
-- Return Statements
-- Intro Blocks
 
 ## Verse Blocks and Execution
 

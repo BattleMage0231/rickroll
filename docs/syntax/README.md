@@ -1,9 +1,10 @@
 # Rickroll Documentation
 
-Rickroll is a dynamically-typed imperative programming language that utilizes lyrics from Never Gonna Give You Up as statements.
+Rickroll is a dynamically-typed imperative programming language that functions using lyrics from Never Gonna Give You Up as statements.
 
-This folder contains an exhaustive documentation of the language in its current state.
+This folder contains exhaustive documentation of the language in its current state.
 
-- Basic Language Features (printing, variables, operators)
-- Loops and Control Structures 
-- Functions
+The recommended order to go through the documentation (which is formatted as a tutorial) is:
+1. [Language Basics](basic.md)
+2. [Loops and Control Structures](control.md)
+3. [Functions](functions.md)

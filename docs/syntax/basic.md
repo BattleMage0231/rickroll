@@ -1,9 +1,4 @@
-# Basic Features
-
-- Data Types and Operators
-- Structure of a Program
-- Printing to Terminal
-- Variables
+# Language Basics
 
 ## Datatypes and Operators
 Currently, rickroll supports the following data types.

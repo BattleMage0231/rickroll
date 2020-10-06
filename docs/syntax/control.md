@@ -1,8 +1,4 @@
-# Loops and Control Statements
-
-- If Statements
-- While Loops
-- Context and Scopes
+# Loops and Control Structures
 
 ## If Statements
 
