@@ -1,4 +1,4 @@
-# Rickroll Documentation
+# Rickroll Language Documentation
 
 Rickroll is a dynamically-typed imperative programming language that functions using lyrics from Never Gonna Give You Up as statements.
 

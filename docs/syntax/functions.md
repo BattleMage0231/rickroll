@@ -37,6 +37,8 @@ There is no output here because although we've declared the function, we haven't
 
 Note that ```ARG1, ARG2...``` must be variables and not expressions.
 
+Also note that functions can be recursively called, but there is a 1e4 max recursion depth.
+
 ```
 [Verse foo]
 (Ooh give you first, second, third)
@@ -59,8 +61,6 @@ Never gonna run foo and desert a, b, c
 -5
 4
 ```
-
-Note that functions can be recursively called, and the max recursion depth is 1e4.
 
 ## Return Statements
 
