@@ -1,112 +1,35 @@
 use lazy_static::lazy_static;
 use regex::Regex;
-use strum_macros::EnumIter;
 
 use crate::error::*;
-use crate::tokenizer::*;
+use crate::tokenizer::Tokenizer;
 use crate::util::*;
 
-use std::collections::HashMap;
-use std::ops::{Index, IndexMut};
-
-#[derive(Debug, EnumIter, Clone)]
-pub enum Statement {
-    Say(Vec<Token>),
-    Let(String),
-    Assign(String, Vec<Token>),
-    Check(Vec<Token>),
-    WhileEnd(),
-    IfEnd(),
-    // functions
-    Chorus(),
-    Intro(),
-    Verse(String, Vec<String>),
-    // function utilities
-    Return(Vec<Token>),
-    Run(String, Vec<String>),
-    RunAssign(String, String, Vec<String>),
-}
-
-// intermediate representation of lexed statements
 #[derive(Debug)]
-pub struct Intermediate {
-    statements: Vec<Statement>,
-    debug_lines: Vec<usize>,
+pub enum Token {
+    Punc(usize, String),
+    Name(usize, String),
+    Value(usize, RickrollObject),
+    Operator(usize, String),
+    Statement(usize, String),
 }
 
-impl Intermediate {
-    pub fn new() -> Intermediate {
-        Intermediate {
-            statements: Vec::new(),
-            debug_lines: Vec::new(),
-        }
-    }
-
-    pub fn from(statements: Vec<(usize, Statement)>) -> Intermediate {
-        let mut temp = Intermediate::new();
-        for (line, instruction) in statements {
-            temp.push(instruction, line);
-        }
-        return temp;
-    }
-
-    pub fn to_vec(&self) -> Vec<(usize, Statement)> {
-        let mut res: Vec<(usize, Statement)> = Vec::new();
-        for i in 0..self.len() {
-            res.push((self.debug_lines[i], self.statements[i].clone()));
-        }
-        return res;
-    }
-
-    pub fn len(&self) -> usize {
-        self.statements.len()
-    }
-
-    pub fn push(&mut self, instruction: Statement, orig_line: usize) {
-        self.statements.push(instruction);
-        self.debug_lines.push(orig_line);
-    }
-
-    pub fn debug_line(&self, index: usize) -> usize {
-        self.debug_lines[index]
-    }
-}
-
-impl Index<usize> for Intermediate {
-    type Output = Statement;
-
-    fn index<'a>(&'a self, index: usize) -> &'a Statement {
-        &self.statements[index]
-    }
-}
-
-impl IndexMut<usize> for Intermediate {
-    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Statement {
-        &mut self.statements[index]
-    }
-}
-
-// lex source code into IR
-// does not do any complex syntax checking
 #[derive(Debug)]
 pub struct Lexer {
     ptr: usize,
     raw: Vec<String>,
-    lexed: Intermediate,
-    scope: Scope,
-    check_counter: usize,
-    function_cache: HashMap<String, usize>, // <Name, Arg count>
+    lexed: Vec<Token>,
 }
 
 impl Lexer {
-    pub fn new(raw_txt: String) -> Lexer {
+    pub fn new(raw_text: String) -> Lexer {
         Lexer {
             ptr: 0,
             raw: {
                 let mut res = Vec::new();
                 let mut cur = String::new();
-                for chr in raw_txt.chars() {
-                    if chr == '\r' || chr == '\n' {
+                for chr in raw_text.chars() {
+                    if chr == '\n' {
                         res.push(cur);
                         cur = String::new();
                     } else {
@@ -116,15 +39,8 @@ impl Lexer {
                 res.push(cur);
                 res
             },
-            lexed: Intermediate::new(),
-            scope: Scope::new(),
-            check_counter: 0,
-            function_cache: HashMap::new(),
+            lexed: Vec::new(),
         }
-    }
-
-    fn advance(&mut self) {
-        self.ptr += 1;
     }
 
     fn has_more(&self) -> bool {
@@ -157,14 +73,6 @@ impl Lexer {
                     ));
                 }
                 args.push(cur.to_owned());
-                // check variable exists
-                if self.function_cache.contains_key(&cur) {
-                    return Err(Error::new(
-                        ErrorType::NameError,
-                        &(format!("Variable {} already exists in another scope", cur))[..],
-                        Some(self.ptr + 1),
-                    ));
-                }
                 cur.clear();
             } else if !chr.is_ascii_whitespace() {
                 // illegal character
@@ -181,19 +89,11 @@ impl Lexer {
         }
         if !cur.is_empty() {
             args.push(cur.to_owned());
-            // check variable exists
-            if self.function_cache.contains_key(&cur) {
-                return Err(Error::new(
-                    ErrorType::NameError,
-                    &(format!("Variable {} already exists in another scope", cur))[..],
-                    Some(self.ptr + 1),
-                ));
-            }
         }
         return Ok(args);
     }
 
-    pub fn parse(mut self) -> Result<Intermediate, Error> {
+    pub fn parse(mut self) -> Result<Vec<Token>, Error> {
         // regexes for matching statements
         lazy_static! {
             // print
@@ -216,54 +116,43 @@ impl Lexer {
             // function parameters
             static ref ARGS: Regex = Regex::new("\\(Ooh give you .+\\)").unwrap();
         }
-        // boolean flags
-        let mut has_chorus = false;
-        let mut has_intro = false;
         // iterate over raw
         while self.has_more() {
             // try to match a statement
             let curln = self.raw[self.ptr].trim();
             if curln == "" {
-                self.advance();
+                self.ptr += 1;
                 continue;
             } else if SAY.is_match(curln) {
                 // ^Never gonna say .+$
                 let expr = String::from(&curln[16..]);
-                let tokens =
-                    self.wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
-                self.lexed.push(Statement::Say(tokens), self.ptr + 1);
+                let tokens = self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("SAY")));
+                for token in tokens {
+                    self.lexed.push(token);
+                }
             } else if LET.is_match(curln) {
                 // ^Never gonna let \\w+ down$
                 let varname = String::from(&curln[16..(curln.len() - 5)]);
-                // variable names already exists
-                if self.scope.has_var(varname.clone()) {
-                    return Err(Error::new(
-                        ErrorType::NameError,
-                        &(format!("Variable {} already exists in the current scope", varname))[..],
-                        Some(self.ptr + 1),
-                    ));
-                }
-                self.scope.add_var(varname.clone());
-                self.lexed.push(Statement::Let(varname), self.ptr + 1);
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("LET")));
+                self.lexed.push(Token::Name(self.ptr + 1, varname));
             } else if ASSIGN.is_match(curln) {
                 // ^Never gonna give \\w+ .+$
                 let slice = String::from(&curln[17..]); // \\w .+
                 match slice.find(' ') {
                     Some(index) => {
                         let varname = String::from(String::from(&slice[..index]).trim());
-                        // variable doesn't exist
-                        if !self.scope.has_var(varname.clone()) {
-                            return Err(Error::new(
-                                ErrorType::NameError,
-                                &(format!("Variable {} doesn't exist", varname))[..],
-                                Some(self.ptr + 1),
-                            ));
-                        }
                         let expr = String::from(&slice[(index + 1)..]);
-                        let tokens = self
-                            .wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
+                        let tokens =
+                            self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
                         self.lexed
-                            .push(Statement::Assign(varname, tokens), self.ptr + 1);
+                            .push(Token::Statement(self.ptr + 1, String::from("ASSIGN")));
+                        self.lexed.push(Token::Name(self.ptr + 1, varname));
+                        for token in tokens {
+                            self.lexed.push(token);
+                        }
                     }
                     None => {
                         return Err(Error::new(
@@ -276,74 +165,34 @@ impl Lexer {
             } else if CHECK.is_match(curln) {
                 // ^Inside we both know .+$
                 let expr = String::from(&curln[20..]);
-                let tokens =
-                    self.wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
-                self.lexed.push(Statement::Check(tokens), self.ptr + 1);
-                // increase check counter
-                self.check_counter += 1;
+                let tokens = self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("CHECK")));
+                for token in tokens {
+                    self.lexed.push(token);
+                }
             } else if WHILE_END.is_match(curln) {
                 // ^We know the game and we\'re gonna play it$
-                self.lexed.push(Statement::WhileEnd(), self.ptr + 1);
-                // mismatched check counter
-                if self.check_counter == 0 {
-                    return Err(Error::new(
-                        ErrorType::SyntaxError,
-                        "Mismatched while end",
-                        Some(self.ptr + 1),
-                    ));
-                }
-                self.check_counter -= 1;
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("WHILE_END")));
             } else if IF_END.is_match(curln) {
                 // ^Your heart\'s been aching but you\'re too shy to say it$
-                self.lexed.push(Statement::IfEnd(), self.ptr + 1);
-                // mismatched check counter
-                if self.check_counter == 0 {
-                    return Err(Error::new(
-                        ErrorType::SyntaxError,
-                        "Mismatched if end",
-                        Some(self.ptr + 1),
-                    ));
-                }
-                self.check_counter -= 1;
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("IF_END")));
             } else if CHORUS.is_match(curln) {
-                if has_chorus {
-                    return Err(Error::new(
-                        ErrorType::SyntaxError,
-                        "Multiple instances of [Chorus]",
-                        Some(self.ptr + 1),
-                    ));
-                }
-                self.lexed.push(Statement::Chorus(), self.ptr + 1);
-                has_chorus = true;
-                self.scope.behead(); // behead scope for new function
-                self.scope.push(Context::new()); // push new context for function
-                self.function_cache.insert(String::from("[Main]"), 0);
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("VERSE")));
+                self.lexed
+                    .push(Token::Name(self.ptr + 1, String::from("[CHORUS]")));
             } else if INTRO.is_match(curln) {
-                if has_intro {
-                    return Err(Error::new(
-                        ErrorType::SyntaxError,
-                        "Multiple instances of [Intro]",
-                        Some(self.ptr + 1),
-                    ));
-                }
-                self.lexed.push(Statement::Intro(), self.ptr + 1);
-                self.scope.behead(); // behead scope for new function (no need to push new context)
-                has_intro = true;
-                self.function_cache.insert(String::from("[Global]"), 0);
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("VERSE")));
+                self.lexed
+                    .push(Token::Name(self.ptr + 1, String::from("[INTRO]")));
             } else if VERSE.is_match(curln) {
                 // ^\\[Verse \\w+\\]$
                 let func_name = String::from(&curln[7..(curln.len() - 1)]);
-                if self.function_cache.contains_key(&func_name) {
-                    return Err(Error::new(
-                        ErrorType::NameError,
-                        &(format!("Function {} already exists", func_name))[..],
-                        Some(self.ptr + 1),
-                    ));
-                }
-                self.scope.behead(); // behead scope for new function
-                self.scope.push(Context::new()); // push new context for function
-                                                 // now we have to read parameters
-                self.advance();
+                self.ptr += 1;
                 let curln = self.raw[self.ptr].trim();
                 if !self.has_more() || !ARGS.is_match(curln) {
                     return Err(Error::new(
@@ -357,21 +206,12 @@ impl Lexer {
                     String::from(&curln[14..(curln.len() - 1)]),
                     String::from("up"),
                 )?;
-                // push function
-                self.function_cache
-                    .insert(func_name.clone(), func_args.len());
-                for varname in &func_args {
-                    if self.scope.has_var(varname.clone()) {
-                        return Err(Error::new(
-                            ErrorType::NameError,
-                            &(format!("Local variable {} already exists globally", varname))[..],
-                            Some(self.ptr + 1),
-                        ));
-                    }
-                    self.scope.add_var(varname.clone());
-                }
                 self.lexed
-                    .push(Statement::Verse(func_name, func_args), self.ptr + 1);
+                    .push(Token::Statement(self.ptr, String::from("VERSE")));
+                self.lexed.push(Token::Name(self.ptr, func_name));
+                for arg in func_args {
+                    self.lexed.push(Token::Name(self.ptr + 1, arg));
+                }
             } else if RUN.is_match(curln) {
                 // ^Never gonna run \\w+ and desert .+$
                 let substring = String::from(&curln[16..]); // \\w+ and desert .+$
@@ -380,78 +220,42 @@ impl Lexer {
                 let func_name = String::from(&substring[..ind]);
                 let func_args =
                     self.split_vars(String::from(&substring[(ind + 12)..]), String::from("you"))?;
-                // function must exist
-                if !self.function_cache.contains_key(&func_name) {
-                    return Err(Error::new(
-                        ErrorType::NameError,
-                        &(format!("Function {} not found", func_name))[..],
-                        Some(self.ptr + 1),
-                    ));
-                }
-                // function arguments must be same length
-                if *self.function_cache.get(&func_name).unwrap() != func_args.len() {
-                    return Err(Error::new(
-                        ErrorType::IllegalArgumentError,
-                        &(format!(
-                            "Function {} called with a different amount of arguments",
-                            func_name
-                        )[..]),
-                        Some(self.ptr + 1),
-                    ));
-                }
                 // push function call
                 self.lexed
-                    .push(Statement::Run(func_name, func_args), self.ptr + 1);
+                    .push(Token::Statement(self.ptr + 1, String::from("RUN")));
+                self.lexed.push(Token::Name(self.ptr + 1, func_name));
+                for arg in func_args {
+                    self.lexed.push(Token::Name(self.ptr + 1, arg));
+                }
             } else if RUN_ASSIGN.is_match(curln) {
                 // ^\\(Ooh give you \\w+\\) Never gonna run \\w+ and desert .+$
                 let substring = String::from(&curln[14..]); // \\w+\\) Never gonna run \\w+ and desert .+$
                 let ind = substring.find(')').unwrap();
                 // get variable info
                 let varname = String::from(&substring[..ind]);
-                // variable must exist
-                if !self.scope.has_var(varname.clone()) {
-                    return Err(Error::new(
-                        ErrorType::NameError,
-                        &(format!("Variable {} doesn't exist", varname))[..],
-                        Some(self.ptr + 1),
-                    ));
-                }
                 let substring = String::from(&substring[(ind + 18)..]); // \\w+ and desert .+$
                 let ind = substring.find(' ').unwrap();
                 // get function info
                 let func_name = String::from(&substring[..ind]);
                 let func_args =
                     self.split_vars(String::from(&substring[(ind + 12)..]), String::from("you"))?;
-                // function must exist
-                if !self.function_cache.contains_key(&func_name) {
-                    return Err(Error::new(
-                        ErrorType::NameError,
-                        &(format!("Function {} not found", func_name))[..],
-                        Some(self.ptr + 1),
-                    ));
-                }
-                // function arguments must be same length
-                if *self.function_cache.get(&func_name).unwrap() != func_args.len() {
-                    return Err(Error::new(
-                        ErrorType::IllegalArgumentError,
-                        &(format!(
-                            "Function {} called with a different amount of arguments",
-                            func_name
-                        )[..]),
-                        Some(self.ptr + 1),
-                    ));
-                }
                 // push function call
-                self.lexed.push(
-                    Statement::RunAssign(varname, func_name, func_args),
-                    self.ptr + 1,
-                );
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("RUN_ASSIGN")));
+                self.lexed.push(Token::Name(self.ptr + 1, varname));
+                self.lexed.push(Token::Name(self.ptr + 1, func_name));
+                for arg in func_args {
+                    self.lexed.push(Token::Name(self.ptr + 1, arg));
+                }
             } else if RETURN.is_match(curln) {
                 // ^\\(Ooh\\) Never gonna give, never gonna give \\(give you .+\\)$
                 let expr = String::from(&curln[51..(curln.len() - 1)]);
-                let tokens =
-                    self.wrap_check(Tokenizer::new(expr, self.scope.clone()).make_tokens())?;
-                self.lexed.push(Statement::Return(tokens), self.ptr + 1);
+                let tokens = self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                self.lexed
+                    .push(Token::Statement(self.ptr + 1, String::from("RETURN")));
+                for token in tokens {
+                    self.lexed.push(token);
+                }
             } else {
                 // unknown statement
                 return Err(Error::new(
@@ -460,14 +264,7 @@ impl Lexer {
                     Some(self.ptr + 1),
                 ));
             }
-            self.advance();
-        }
-        if self.check_counter != 0 {
-            return Err(Error::new(
-                ErrorType::SyntaxError,
-                "Mismatched while or if start",
-                Some(self.ptr),
-            ));
+            self.ptr += 1;
         }
         return Ok(self.lexed);
     }
@@ -561,5 +358,37 @@ mod tests {
             "Err(Error { err: SyntaxError, desc: \"Mismatched while or if start\", line: Some(4), child: None })",
         );
     }
+}
+*/
+
+/*
+#[derive(Debug, EnumIter, Clone)]
+pub enum Statement {
+    Say(usize, Vec<String>),
+    Let(usize, String),
+    Assign(usize, String, Vec<String>),
+    Check(usize, Vec<String>),
+    WhileEnd(usize),
+    IfEnd(usize),
+    // functions
+    Chorus(usize),
+    Intro(usize),
+    Verse(usize, String, Vec<String>),
+    // function utilities
+    Return(usize, Vec<String>),
+    Run(usize, String, Vec<String>),
+    RunAssign(usize, String, String, Vec<String>),
+}
+
+// lex source code into IR
+// does not do any complex syntax checking
+#[derive(Debug)]
+pub struct Lexer {
+    ptr: usize,
+    raw: Vec<String>,
+    lexed: Vec<Statement>,
+    scope: Scope,
+    check_counter: usize,
+    function_cache: HashMap<String, usize>, // <Name, Arg count>
 }
 */

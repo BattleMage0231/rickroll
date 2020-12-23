@@ -1,39 +1,27 @@
 use crate::error::*;
+use crate::lexer::Token;
 use crate::util::*;
 
 // special operator characters
-const OP_CHAR: &str = "!&|<>=";
-
-// rickroll token
-#[derive(Debug, Clone)]
-pub enum Token {
-    Value(RickrollObject),
-    Operator(Operator),
-    Variable(String),
-}
+const OP_CHARS: &str = "!&|<>=";
 
 #[derive(Debug)]
 pub struct Tokenizer {
     raw: Vec<char>, // raw expression string
     ptr: usize,
-    scope: Scope,
     tokens: Vec<Token>,
+    line: usize,
 }
 
 impl Tokenizer {
     // makes a new tokenizer from the raw string
-    pub fn new(string: String, scope: Scope) -> Tokenizer {
+    pub fn new(string: String, line: usize) -> Tokenizer {
         Tokenizer {
             raw: string.trim().chars().collect(),
             ptr: 0,
-            scope,
             tokens: Vec::new(),
+            line,
         }
-    }
-
-    // advances the ptr
-    fn advance(&mut self) {
-        self.ptr += 1;
     }
 
     // whether tokenizer has more characters to parse
@@ -43,7 +31,6 @@ impl Tokenizer {
 
     // consume self after making tokens
     pub fn make_tokens(mut self) -> Result<Vec<Token>, Error> {
-        let mut paren_balance = 0;
         // empty expression cannot be parsed
         if self.raw.is_empty() {
             return Err(Error::new(
@@ -67,14 +54,14 @@ impl Tokenizer {
                 continue;
             }
             // make operator
-            if OP_CHAR.contains(chr) {
+            if OP_CHARS.contains(chr) {
                 let operator = self.make_operator()?;
                 self.tokens.push(operator);
                 continue;
             }
             // character literal
             if chr == '\'' {
-                self.advance();
+                self.ptr += 1;
                 // expected more characters in expression
                 if !self.has_more() {
                     return Err(Error::new(
@@ -94,7 +81,7 @@ impl Tokenizer {
                 }
                 // possible escape sequence
                 if chrlit == '\\' {
-                    self.advance();
+                    self.ptr += 1;
                     if !self.has_more() {
                         return Err(Error::new(
                             ErrorType::IllegalCharError,
@@ -108,7 +95,7 @@ impl Tokenizer {
                         _ => chr,    // otherwise no escape sequence found, regular char
                     };
                 }
-                self.advance();
+                self.ptr += 1;
                 if !self.has_more() {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -121,61 +108,24 @@ impl Tokenizer {
                 if chr != '\'' {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
-                        "Too many characters in literal",
+                        "More than one character in literal",
                         None,
                     ));
                 }
                 // push char value
-                self.tokens.push(Token::Value(RickrollObject::Char(chrlit)));
-                self.advance();
+                self.tokens
+                    .push(Token::Value(self.line, RickrollObject::Char(chrlit)));
+                self.ptr += 1;
                 continue;
             }
             match chr {
                 // whitespace can be ignored
                 chr if chr.is_whitespace() => (),
-                '+' => self.tokens.push(Token::Operator(Operator::Add)),
-                // must differentiate between subtract and unary minus
-                '-' => {
-                    let mut token = Token::Operator(Operator::UnaryMinus); // unary minus default
-                    if !self.tokens.is_empty() {
-                        // if last token was either int or float, it's subtract
-                        match self.tokens.last().unwrap() {
-                            Token::Value(obj) => match obj {
-                                RickrollObject::Int(_) | RickrollObject::Float(_) => {
-                                    token = Token::Operator(Operator::Subtract);
-                                }
-                                _ => (),
-                            },
-                            Token::Variable(_) => token = Token::Operator(Operator::Subtract),
-                            Token::Operator(op) => match op {
-                                Operator::RParen => {
-                                    token = Token::Operator(Operator::Subtract);
-                                }
-                                _ => (),
-                            },
-                        }
-                    }
-                    self.tokens.push(token);
-                }
-                '*' => self.tokens.push(Token::Operator(Operator::Multiply)),
-                '/' => self.tokens.push(Token::Operator(Operator::Divide)),
-                '%' => self.tokens.push(Token::Operator(Operator::Modulo)),
-                '(' => {
-                    self.tokens.push(Token::Operator(Operator::LParen));
-                    paren_balance += 1;
-                }
-                ')' => {
-                    self.tokens.push(Token::Operator(Operator::RParen));
-                    paren_balance -= 1;
-                    if paren_balance < 0 {
-                        return Err(Error::new(
-                            ErrorType::SyntaxError,
-                            "Unbalanced parenthesis",
-                            None,
-                        ));
-                    }
-                }
-                ':' => self.tokens.push(Token::Operator(Operator::ArrayAccess)),
+                '+' | '-' | '*' | '/' | '%' | ':' => self
+                    .tokens
+                    .push(Token::Operator(self.line, String::from(chr))),
+                '(' => self.tokens.push(Token::Punc(self.line, String::from("("))),
+                ')' => self.tokens.push(Token::Punc(self.line, String::from(")"))),
                 _ => {
                     return Err(Error::new(
                         ErrorType::IllegalCharError,
@@ -184,14 +134,7 @@ impl Tokenizer {
                     ));
                 }
             }
-            self.advance();
-        }
-        if paren_balance != 0 {
-            return Err(Error::new(
-                ErrorType::SyntaxError,
-                "Unbalanced parenthesis",
-                None,
-            ));
+            self.ptr += 1;
         }
         return Ok(self.tokens);
     }
@@ -251,7 +194,7 @@ impl Tokenizer {
                     }
                 }
             }
-            self.advance();
+            self.ptr += 1;
             // check if still part of number
             if self.has_more() {
                 let cur = self.raw[self.ptr];
@@ -265,11 +208,14 @@ impl Tokenizer {
             }
         }
         // return float/int depending on value
-        return Ok(Token::Value(if float {
-            RickrollObject::Float(fnum)
-        } else {
-            RickrollObject::Int(inum)
-        }));
+        return Ok(Token::Value(
+            self.line,
+            if float {
+                RickrollObject::Float(fnum)
+            } else {
+                RickrollObject::Int(inum)
+            },
+        ));
     }
 
     // makes a variable/constant starting at ptr
@@ -278,7 +224,7 @@ impl Tokenizer {
         let mut chr = self.raw[self.ptr];
         loop {
             varname.push(chr);
-            self.advance();
+            self.ptr += 1;
             if self.has_more() {
                 let cur = self.raw[self.ptr];
                 // can only be alphabetic or _
@@ -294,18 +240,10 @@ impl Tokenizer {
         // check if var is a constant
         let res = from_constant(&varname);
         if res.is_some() {
-            return Ok(Token::Value(res.unwrap()));
+            return Ok(Token::Value(self.line, res.unwrap()));
+        } else {
+            return Ok(Token::Name(self.line, varname));
         }
-        // check context for possible variable
-        if self.scope.has_var(varname.clone()) {
-            return Ok(Token::Variable(varname));
-        }
-        // var/const not found
-        return Err(Error::new(
-            ErrorType::NameError,
-            &format!("Variable {} not found", varname).to_string(),
-            None,
-        ));
     }
 
     // makes a complex operator starting at ptr
@@ -314,10 +252,10 @@ impl Tokenizer {
         let mut chr = self.raw[self.ptr];
         loop {
             opname.push(chr);
-            self.advance();
+            self.ptr += 1;
             if self.has_more() {
                 let cur = self.raw[self.ptr];
-                if OP_CHAR.contains(cur) {
+                if OP_CHARS.contains(cur) {
                     chr = cur;
                 } else {
                     break;
@@ -326,115 +264,17 @@ impl Tokenizer {
                 break;
             }
         }
-        use Operator::*;
         return match &opname[..] {
-            "&&" => Ok(Token::Operator(And)),
-            "||" => Ok(Token::Operator(Or)),
-            ">" => Ok(Token::Operator(Greater)),
-            "<" => Ok(Token::Operator(Less)),
-            ">=" => Ok(Token::Operator(GreaterEquals)),
-            "<=" => Ok(Token::Operator(LessEquals)),
-            "==" => Ok(Token::Operator(Equals)),
             // support only one "!" before an argument
-            // multuple "!" can be formatted as "! !"
-            "!" => Ok(Token::Operator(Not)),
-            "!=" => Ok(Token::Operator(NotEquals)),
+            // multiple "!" can be formatted as "! !"
+            "&&" | "||" | ">" | "<" | ">=" | "<=" | "==" | "!=" | "!" => {
+                Ok(Token::Operator(self.line, opname))
+            }
             _ => Err(Error::new(
                 ErrorType::RuntimeError,
                 &format!("Operator {} not found", opname).to_string(),
                 None,
             )),
         };
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // helper function to return string form of parsed
-    fn get(expr: &str) -> String {
-        match Tokenizer::new(String::from(expr), Scope::new()).make_tokens() {
-            Ok(tokens) => format!("{:?}", tokens),
-            Err(err) => format!("{:?}", err),
-        }
-    }
-
-    // helper functions to test whether the first expression parses to the second
-    fn assert_eqv(first: &str, second: &str) {
-        assert_eq!(&get(first)[..], second);
-    }
-
-    // simple expressions without brackets
-    #[test]
-    fn simple() {
-        assert_eqv("1 + 2", "[Value(Int(1)), Operator(Add), Value(Int(2))]");
-        assert_eqv("1  + 2- 3 *45 ", "[Value(Int(1)), Operator(Add), Value(Int(2)), Operator(Subtract), Value(Int(3)), Operator(Multiply), Value(Int(45))]");
-        assert_eqv("72 * 4.0 + -1.0", "[Value(Int(72)), Operator(Multiply), Value(Float(4.0)), Operator(Add), Operator(UnaryMinus), Value(Float(1.0))]");
-    }
-
-    // valid parenthesis expressions
-    #[test]
-    fn paren() {
-        assert_eqv("(3 * 4)", "[Operator(LParen), Value(Int(3)), Operator(Multiply), Value(Int(4)), Operator(RParen)]");
-        assert_eqv("2 % (1 + 2 * 3 ) + 5", "[Value(Int(2)), Operator(Modulo), Operator(LParen), Value(Int(1)), Operator(Add), Value(Int(2)), Operator(Multiply), Value(Int(3)), Operator(RParen), Operator(Add), Value(Int(5))]");
-        assert_eqv("4 + (( 4+ 5 ) * (3) * 1)", "[Value(Int(4)), Operator(Add), Operator(LParen), Operator(LParen), Value(Int(4)), Operator(Add), Value(Int(5)), Operator(RParen), Operator(Multiply), Operator(LParen), Value(Int(3)), Operator(RParen), Operator(Multiply), Value(Int(1)), Operator(RParen)]");
-    }
-
-    // valid character expressions
-    #[test]
-    fn char() {
-        assert_eqv("'x'", "[Value(Char('x'))]");
-        assert_eqv("'\\n'", "[Value(Char('\\n'))]");
-    }
-
-    // valid boolean expressiobs
-    #[test]
-    fn bool() {
-        assert_eqv(
-            " 3 > 4",
-            "[Value(Int(3)), Operator(Greater), Value(Int(4))]",
-        );
-        assert_eqv("4 <= 5 ||5 > 6", "[Value(Int(4)), Operator(LessEquals), Value(Int(5)), Operator(Or), Value(Int(5)), Operator(Greater), Value(Int(6))]");
-        assert_eqv("!(1 == 1) && 2 != 2 || 3 + 1 > 4", "[Operator(Not), Operator(LParen), Value(Int(1)), Operator(Equals), Value(Int(1)), Operator(RParen), Operator(And), Value(Int(2)), Operator(NotEquals), Value(Int(2)), Operator(Or), Value(Int(3)), Operator(Add), Value(Int(1)), Operator(Greater), Value(Int(4))]");
-    }
-
-    // valid language constants
-    #[test]
-    fn constants() {
-        assert_eqv(
-            "TRUE || FALSE",
-            "[Value(Bool(true)), Operator(Or), Value(Bool(false))]",
-        );
-        assert_eqv(
-            " ARRAY:3",
-            "[Value(Array([])), Operator(ArrayAccess), Value(Int(3))]",
-        );
-        assert_eqv("UNDEFINED", "[Value(Undefined)]");
-    }
-
-    // should output error
-    #[test]
-    fn error() {
-        assert_eqv(
-            "    ",
-            "Error { err: SyntaxError, desc: \"Unexpected end of statement\", line: None, child: None }",
-        );
-        assert_eqv(
-            "'a",
-            "Error { err: IllegalCharError, desc: \"Trailing character literal\", line: None, child: None }",
-        );
-        assert_eqv(
-            "3 + (()()",
-            "Error { err: SyntaxError, desc: \"Unbalanced parenthesis\", line: None, child: None }",
-        );
-        assert_eqv(
-            "a += b ** cD",
-            "Error { err: NameError, desc: \"Variable a not found\", line: None, child: None }",
-        );
-        assert_eqv(
-            "'asdasdasdasdasd'",
-            "Error { err: IllegalCharError, desc: \"Too many characters in literal\", line: None, child: None }",
-        );
     }
 }

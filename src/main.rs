@@ -1,9 +1,6 @@
-use rickroll::compiler::*;
-use rickroll::interpreter::*;
 use rickroll::lexer::*;
 
 use std::env::args;
-use std::io::*;
 
 fn main() {
     let mut arguments = args();
@@ -37,6 +34,7 @@ Never gonna say a
     let ir = lexer.parse().unwrap();
     println!("{:?}", ir);
     eprintln!("\x1b[0;31mFinished lexing...\x1b[0m");
+    /*
     eprintln!("\x1b[0;31mStarted compiling...\x1b[0m");
     let compiler = Compiler::new(ir);
     let compiled = compiler.compile().unwrap();
@@ -49,4 +47,5 @@ Never gonna say a
         interpreter.execute(stdout(), BufReader::new(stdin()))
     );
     eprintln!("\x1b[0;31mFinished interpreting...\x1b[0m");
+    */
 }

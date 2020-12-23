@@ -38,9 +38,6 @@ pub struct Function {
     instructions: Vec<Instruction>,
     args: Vec<String>,
     debug_lines: Vec<usize>,
-    /*
-     * file: String,
-     */
 }
 
 impl Function {
