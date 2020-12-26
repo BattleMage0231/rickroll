@@ -2,16 +2,29 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 use crate::error::*;
-use crate::tokenizer::Tokenizer;
+use crate::expr::ExprLexer;
 use crate::util::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Punc(usize, String),
     Name(usize, String),
     Value(usize, RickrollObject),
     Operator(usize, String),
     Statement(usize, String),
+}
+
+impl Token {
+    pub fn get_line(&self) -> usize {
+        use Token::*;
+        match self {
+            Punc(ln, _) => *ln,
+            Name(ln, _) => *ln,
+            Value(ln, _) => *ln,
+            Operator(ln, _) => *ln,
+            Statement(ln, _) => *ln,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -126,7 +139,7 @@ impl Lexer {
             } else if SAY.is_match(curln) {
                 // ^Never gonna say .+$
                 let expr = String::from(&curln[16..]);
-                let tokens = self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                let tokens = self.wrap_check(ExprLexer::new(expr, self.ptr + 1).make_tokens())?;
                 self.lexed
                     .push(Token::Statement(self.ptr + 1, String::from("SAY")));
                 for token in tokens {
@@ -146,7 +159,7 @@ impl Lexer {
                         let varname = String::from(String::from(&slice[..index]).trim());
                         let expr = String::from(&slice[(index + 1)..]);
                         let tokens =
-                            self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                            self.wrap_check(ExprLexer::new(expr, self.ptr + 1).make_tokens())?;
                         self.lexed
                             .push(Token::Statement(self.ptr + 1, String::from("ASSIGN")));
                         self.lexed.push(Token::Name(self.ptr + 1, varname));
@@ -165,7 +178,7 @@ impl Lexer {
             } else if CHECK.is_match(curln) {
                 // ^Inside we both know .+$
                 let expr = String::from(&curln[20..]);
-                let tokens = self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                let tokens = self.wrap_check(ExprLexer::new(expr, self.ptr + 1).make_tokens())?;
                 self.lexed
                     .push(Token::Statement(self.ptr + 1, String::from("CHECK")));
                 for token in tokens {
@@ -250,7 +263,7 @@ impl Lexer {
             } else if RETURN.is_match(curln) {
                 // ^\\(Ooh\\) Never gonna give, never gonna give \\(give you .+\\)$
                 let expr = String::from(&curln[51..(curln.len() - 1)]);
-                let tokens = self.wrap_check(Tokenizer::new(expr, self.ptr + 1).make_tokens())?;
+                let tokens = self.wrap_check(ExprLexer::new(expr, self.ptr + 1).make_tokens())?;
                 self.lexed
                     .push(Token::Statement(self.ptr + 1, String::from("RETURN")));
                 for token in tokens {

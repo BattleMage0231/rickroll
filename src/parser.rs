@@ -1,320 +1,252 @@
 use crate::error::*;
-use crate::tokenizer::Token;
+use crate::lexer::Token;
 use crate::util::*;
+use crate::expr::*;
 
-/*
- * This expression parser utilizes Dijkstra's Shunting-yard algorithm
- * for parsing and evaluating infix notation expressions.
- * https://en.wikipedia.org/wiki/Shunting-yard_algorithm
- */
+use std::collections::{HashMap, HashSet, VecDeque};
 
-// get precedence of operator
-pub fn precedence_of(op: &Operator) -> usize {
-    use Operator::*;
-    // higher precedence is evaluated before lower
-    return match op {
-        LParen => 0, // no operator can pop left parenthesis
-        Or => 1,
-        And => 2,
-        Greater | Less | GreaterEquals | LessEquals | Equals | NotEquals => 3,
-        Add | Subtract => 4,
-        Multiply | Divide | Modulo => 5,
-        ArrayAccess => 6,
-        Not => 7,
-        UnaryMinus => 8,
-        RParen => 9,
-    };
+#[derive(Debug)]
+pub enum ASTNode {
+    Say(usize, Expr),
+    Let(usize, String),
+    Assign(usize, String, Expr),
+    If(usize, Expr, Vec<ASTNode>),
+    While(usize, Expr, Vec<ASTNode>),
+    Function(usize, String, Vec<String>, Vec<ASTNode>),
+    Return(usize, Expr),
+    Run(usize, String, Vec<String>),
+    RunAssign(usize, String, String, Vec<String>),
 }
 
-// helper functions to make an operator not found/defined error
-fn err_unary(op: &str, first: &RickrollObject) -> Error {
-    Error::new(
-        ErrorType::IllegalArgumentError,
-        &format!("{} is not defined for {:?}", op, first)[..],
-        None,
-    )
-}
-
-fn err_binary(op: &str, first: &RickrollObject, second: &RickrollObject) -> Error {
-    Error::new(
-        ErrorType::IllegalArgumentError,
-        &format!("{} is not defined for {:?} and {:?}", op, first, second)[..],
-        None,
-    )
-}
-
-// evaluates an unary expression
-pub fn eval_unary(op: &Operator, arg: &RickrollObject) -> Result<RickrollObject, Error> {
-    use Operator::*;
-    use RickrollObject::*;
-    return match op {
-        UnaryMinus => match arg {
-            Int(x) => Ok(Int(-x)),
-            Float(x) => Ok(Float(-x)),
-            _ => Err(err_unary("Unary minus", arg)),
-        },
-        Not => match arg {
-            Bool(x) => Ok(Bool(!x)),
-            _ => Err(err_unary("Unary not", arg)),
-        },
-        _ => panic!("Operator is not unary!"),
-    };
-}
-
-// evaluates a binary expression
-pub fn eval_binary(
-    op: &Operator,
-    first: &RickrollObject,
-    second: &RickrollObject,
-) -> Result<RickrollObject, Error> {
-    use Operator::*;
-    use RickrollObject::*;
-    return match op {
-        ArrayAccess => match (first, second) {
-            // array access makes a deep copy of the array
-            // this doesn't matter since expressions can't mutate objects in Rickroll
-            (Array(arr), Int(x)) => Ok(arr[*x as usize].clone()),
-            _ => Err(err_binary("Array access", first, second)),
-        },
-        Add => match (first, second) {
-            (Int(x), Int(y)) => Ok(Int(x + y)),
-            (Float(x), Float(y)) => Ok(Float(x + y)),
-            (Int(x), Float(y)) => Ok(Float(*x as f32 + y)),
-            (Float(x), Int(y)) => Ok(Float(x + *y as f32)),
-            _ => Err(err_binary("Add", first, second)),
-        },
-        Subtract => match (first, second) {
-            (Int(x), Int(y)) => Ok(Int(x - y)),
-            (Float(x), Float(y)) => Ok(Float(x - y)),
-            (Int(x), Float(y)) => Ok(Float(*x as f32 - y)),
-            (Float(x), Int(y)) => Ok(Float(x - *y as f32)),
-            _ => Err(err_binary("Subtract", first, second)),
-        },
-        Multiply => match (first, second) {
-            (Int(x), Int(y)) => Ok(Int(x * y)),
-            (Float(x), Float(y)) => Ok(Float(x * y)),
-            (Int(x), Float(y)) => Ok(Float(*x as f32 * y)),
-            (Float(x), Int(y)) => Ok(Float(x * *y as f32)),
-            _ => Err(err_binary("Multiply", first, second)),
-        },
-        Divide => match (first, second) {
-            (Int(x), Int(y)) => Ok(Int(x / y)),
-            (Float(x), Float(y)) => Ok(Float(x / y)),
-            (Int(x), Float(y)) => Ok(Float(*x as f32 / y)),
-            (Float(x), Int(y)) => Ok(Float(x / *y as f32)),
-            _ => Err(err_binary("Divide", first, second)),
-        },
-        Modulo => match (first, second) {
-            (Int(x), Int(y)) => Ok(Int(x % y)),
-            (Float(x), Float(y)) => Ok(Float(x % y)),
-            (Int(x), Float(y)) => Ok(Float(*x as f32 % y)),
-            (Float(x), Int(y)) => Ok(Float(x % *y as f32)),
-            _ => Err(err_binary("Modulo", first, second)),
-        },
-        And => match (first, second) {
-            (Bool(x), Bool(y)) => Ok(Bool(*x && *y)),
-            _ => Err(err_binary("And", first, second)),
-        },
-        Or => match (first, second) {
-            (Bool(x), Bool(y)) => Ok(Bool(*x || *y)),
-            _ => Err(err_binary("Or", first, second)),
-        },
-        Greater => match (first, second) {
-            (Int(x), Int(y)) => Ok(Bool(x > y)),
-            (Float(x), Float(y)) => Ok(Bool(x > y)),
-            (Int(x), Float(y)) => Ok(Bool(*x as f32 > *y)),
-            (Float(x), Int(y)) => Ok(Bool(*x > *y as f32)),
-            _ => Err(err_binary("Greater", first, second)),
-        },
-        Less => match (first, second) {
-            (Int(x), Int(y)) => Ok(Bool(x < y)),
-            (Float(x), Float(y)) => Ok(Bool(x < y)),
-            (Int(x), Float(y)) => Ok(Bool((*x as f32) < *y)),
-            (Float(x), Int(y)) => Ok(Bool(*x < *y as f32)),
-            _ => Err(err_binary("Less", first, second)),
-        },
-        GreaterEquals => match (first, second) {
-            (Int(x), Int(y)) => Ok(Bool(x >= y)),
-            (Float(x), Float(y)) => Ok(Bool(x >= y)),
-            (Int(x), Float(y)) => Ok(Bool(*x as f32 >= *y)),
-            (Float(x), Int(y)) => Ok(Bool(*x >= *y as f32)),
-            _ => Err(err_binary("Greater equals", first, second)),
-        },
-        LessEquals => match (first, second) {
-            (Int(x), Int(y)) => Ok(Bool(x <= y)),
-            (Float(x), Float(y)) => Ok(Bool(x <= y)),
-            (Int(x), Float(y)) => Ok(Bool(*x as f32 <= *y)),
-            (Float(x), Int(y)) => Ok(Bool(*x <= *y as f32)),
-            _ => Err(err_binary("Less equals", first, second)),
-        },
-        Equals => match (first, second) {
-            (Int(x), Int(y)) => Ok(Bool(x == y)),
-            (Float(x), Float(y)) => Ok(Bool(x == y)),
-            (Int(x), Float(y)) => Ok(Bool(*x as f32 == *y)),
-            (Float(x), Int(y)) => Ok(Bool(*x == *y as f32)),
-            (Bool(x), Bool(y)) => Ok(Bool(x ^ y)),
-            (Char(x), Char(y)) => Ok(Bool(x == y)),
-            _ => Ok(Bool(false)), // default false
-        },
-        NotEquals => match (first, second) {
-            (Int(x), Int(y)) => Ok(Bool(x != y)),
-            (Float(x), Float(y)) => Ok(Bool(x != y)),
-            (Int(x), Float(y)) => Ok(Bool(*x as f32 != *y)),
-            (Float(x), Int(y)) => Ok(Bool(*x != *y as f32)),
-            (Bool(x), Bool(y)) => Ok(Bool(!(x ^ y))),
-            (Char(x), Char(y)) => Ok(Bool(x != y)),
-            _ => Ok(Bool(true)), // default true
-        },
-        _ => panic!(format!("Operator {:?} is not binary!", op)),
-    };
+impl ASTNode {
+    pub fn get_line(&self) -> usize {
+        use ASTNode::*;
+        match self {
+            Say(ln, _) => *ln,
+            Let(ln, _) => *ln,
+            Assign(ln, _, _) => *ln,
+            If(ln, _, _) => *ln,
+            While(ln, _, _) => *ln,
+            Function(ln, _, _, _) => *ln,
+            Return(ln, _) => *ln,
+            Run(ln, _, _) => *ln,
+            RunAssign(ln, _, _, _) => *ln,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Parser {
-    tokens: Vec<Token>,
-    ptr: usize,
-    value_stack: Vec<RickrollObject>, // stack of values
-    op_stack: Vec<Operator>,          // stack of operators
+    tokens: VecDeque<Token>,
+    output: HashMap<String, ASTNode>,
+    func_cache: HashSet<String>,
     scope: Scope,
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>, scope: Scope) -> Parser {
+    pub fn new(tokens: Vec<Token>) -> Parser {
         Parser {
-            tokens,
-            ptr: 0,
-            value_stack: Vec::new(),
-            op_stack: Vec::new(),
-            scope,
+            tokens: VecDeque::from(tokens),
+            output: HashMap::new(),
+            func_cache: HashSet::new(),
+            scope: Scope::new(),
         }
     }
 
-    fn advance(&mut self) {
-        self.ptr += 1;
+    fn get_name(&mut self) -> String {
+        let name = self.tokens.pop_front().unwrap();
+        match name {
+            Token::Name(_, name) => return name,
+            _ => panic!("Parser::get_name called with invalid name"),
+        }
     }
 
-    fn has_more(&self) -> bool {
-        self.ptr < self.tokens.len()
+    fn parse_expr(&mut self) -> Result<Expr, Error> {
+        let mut expr_tokens: Vec<Token> = Vec::new();
+        while !self.tokens.is_empty() {
+            if let Token::Statement(_, _) = self.tokens.front().unwrap() {
+                break;
+            }
+            expr_tokens.push(self.tokens.pop_front().unwrap());
+        }
+        let parser = ExprParser::new(expr_tokens, self.scope.clone());
+        return parser.parse();
     }
 
-    // evaluates all possible operations given that the last operator is op
-    // all operators are left-associative
-    fn pop(&mut self, op: &Operator) -> Result<(), Error> {
-        while !self.op_stack.is_empty()
-            && precedence_of(self.op_stack.last().unwrap()) >= precedence_of(op)
-        {
-            let top = self.op_stack.last().unwrap();
-            if top.is_unary() {
-                if self.value_stack.is_empty() {
-                    return Err(Error::new(
-                        ErrorType::IllegalArgumentError,
-                        "Not enough arguments",
-                        None,
-                    ));
+    fn parse_loop(&mut self, line: usize) -> Result<ASTNode, Error> {
+        self.scope.push(Context::new());
+        let condition = self.parse_expr()?;
+        let mut body: Vec<ASTNode> = Vec::new();
+        while !self.tokens.is_empty() {
+            let top = self.tokens.front().unwrap();
+            if let Token::Statement(ln, kw) = top {
+                match &kw[..] {
+                    "WHILE_END" => {
+                        self.scope.pop();
+                        self.tokens.pop_front();
+                        return Ok(ASTNode::While(line, condition, body));
+                    },
+                    "IF_END" => {
+                        self.scope.pop();
+                        self.tokens.pop_front();
+                        return Ok(ASTNode::If(line, condition, body));
+                    },
+                    "VERSE" => {
+                        return Err(Error::new(ErrorType::SyntaxError, "Unbalanced statements", Some(*ln)));
+                    },
+                    _ => {
+                        body.push(self.parse_statement()?);
+                    }
                 }
-                let arg = self.value_stack.pop().unwrap();
-                self.value_stack.push(eval_unary(top, &arg)?);
             } else {
-                if self.value_stack.len() < 2 {
-                    return Err(Error::new(
-                        ErrorType::IllegalArgumentError,
-                        "Not enough arguments",
-                        None,
-                    ));
-                }
-                let first = self.value_stack.pop().unwrap();
-                let second = self.value_stack.pop().unwrap();
-                self.value_stack.push(eval_binary(top, &second, &first)?);
+                panic!("Parser::parse_loop called with invalid statement");
             }
-            self.op_stack.pop();
         }
-        Ok(())
+        return Err(Error::new(ErrorType::SyntaxError, "Unbalanced statements", None));
     }
 
-    // evaluates all operations until there are no operators or a left parenthesis is reached
-    fn pop_all(&mut self) -> Result<(), Error> {
-        while !self.op_stack.is_empty() {
-            let top = self.op_stack.pop().unwrap();
-            match top {
-                Operator::LParen => break,
-                _ => {
-                    if top.is_unary() {
-                        if self.value_stack.is_empty() {
-                            return Err(Error::new(
-                                ErrorType::IllegalArgumentError,
-                                "Not enough arguments",
-                                None,
-                            ));
-                        }
-                        let arg = self.value_stack.pop().unwrap();
-                        self.value_stack.push(eval_unary(&top, &arg)?);
-                    } else {
-                        if self.value_stack.len() < 2 {
-                            return Err(Error::new(
-                                ErrorType::IllegalArgumentError,
-                                "Not enough arguments",
-                                None,
-                            ));
-                        }
-                        let first = self.value_stack.pop().unwrap();
-                        let second = self.value_stack.pop().unwrap();
-                        self.value_stack.push(eval_binary(&top, &second, &first)?);
+    fn parse_statement(&mut self) -> Result<ASTNode, Error> {
+        let token = self.tokens.pop_front().unwrap();
+        if let Token::Statement(line, kw) = token {
+            match &kw[..] {
+                "SAY" => {
+                    return Ok(ASTNode::Say(line, self.parse_expr()?));
+                },
+                "LET" => {
+                    let name = self.get_name();
+                    if self.scope.has_var(name.clone()) {
+                        return Err(Error::new(ErrorType::NameError, &format!("Variable name {} already exists", name)[..], Some(line)));
                     }
-                }
+                    self.scope.add_var(name.clone());
+                    return Ok(ASTNode::Let(line, name));
+                },
+                "ASSIGN" => {
+                    let name = self.get_name();
+                    if !self.scope.has_var(name.clone()) {
+                        return Err(Error::new(ErrorType::NameError, &format!("Variable name {} doesn't exist", name)[..], Some(line)));
+                    }
+                    return Ok(ASTNode::Assign(line, name, self.parse_expr()?));
+                },
+                "CHECK" => {
+                    return self.parse_loop(line);
+                },
+                "WHILE_END" | "IF_END" => {
+                    return Err(Error::new(ErrorType::SyntaxError, "Unbalanced statements", Some(line)));
+                },
+                "RUN" => {
+                    let name = self.get_name();
+                    if !self.func_cache.contains(&name) {
+                        return Err(Error::new(ErrorType::NameError, &format!("Function name {} doesn't exist", name)[..], Some(line)));
+                    }
+                    let mut args: Vec<String> = Vec::new();
+                    while !self.tokens.is_empty() {
+                        match self.tokens.front().unwrap() {
+                            Token::Name(_, name) => {
+                                args.push(name.clone());
+                                self.tokens.pop_front();
+                            }
+                            _ => break,
+                        }
+                    }
+                    return Ok(ASTNode::Run(line, name, args));
+                },
+                "RUN_ASSIGN" => {
+                    let var_name = self.get_name();
+                    let name = self.get_name();
+                    if !self.func_cache.contains(&name) {
+                        return Err(Error::new(ErrorType::NameError, &format!("Function name {} doesn't exist", name)[..], Some(line)));
+                    }
+                    let mut args: Vec<String> = Vec::new();
+                    while !self.tokens.is_empty() {
+                        match self.tokens.front().unwrap() {
+                            Token::Name(_, name) => {
+                                args.push(name.clone());
+                                self.tokens.pop_front();
+                            }
+                            _ => break,
+                        }
+                    }
+                    return Ok(ASTNode::RunAssign(line, var_name, name, args));
+                },
+                "RETURN" => {
+                    return Ok(ASTNode::Return(line, self.parse_expr()?));
+                },
+                _ => panic!("Parser::parse_statement called with invalid keyword {}", kw),
             }
+        } else {
+            return Err(Error::new(ErrorType::SyntaxError, "Illegal statement", Some(token.get_line())));
         }
-        Ok(())
     }
 
-    // evaluates the expression
-    pub fn eval(mut self) -> Result<RickrollObject, Error> {
-        while self.has_more() {
-            let token = (&self.tokens)[self.ptr].clone(); // reference to a Token object
-            match token {
-                Token::Value(obj) => self.value_stack.push(obj.clone()), // push to stack if value
-                Token::Operator(op) => {
-                    if let Operator::RParen = op {
-                        self.pop_all()?;
-                    } else if let Operator::LParen = op {
-                        self.op_stack.push(op.clone());
-                    } else {
-                        // unary operator => wait for binary operator to pop it
-                        if !op.is_unary() {
-                            self.pop(&op)?; // pop all possible if operator
+    fn parse_function(&mut self) -> Result<ASTNode, Error> {
+        let token = self.tokens.pop_front().unwrap();
+        let mut body: Vec<ASTNode> = Vec::new();
+        if let Token::Statement(ln, kw) = &token {
+            if kw.clone() == String::from("VERSE") {
+                // add scope
+                self.scope.push(Context::new());
+                // extract name
+                let name_token = self.tokens.pop_front().unwrap();
+                let name = match name_token {
+                    Token::Name(_, name) => name,
+                    _ => panic!("Parser::parse_function called with malformed verse token"),
+                };
+                // insert into func_cache
+                if self.func_cache.contains(&name) {
+                    return Err(Error::new(ErrorType::NameError, &format!("Function named {} already exists", name)[..], Some(*ln)));
+                }
+                self.func_cache.insert(name.clone());
+                // extract arguments
+                let mut args: Vec<String> = Vec::new();
+                while !self.tokens.is_empty() {
+                    let front = self.tokens.front().unwrap();
+                    match front {
+                        Token::Name(_, name) => {
+                            args.push(name.clone());
+                            self.scope.add_var(name.clone());
+                            self.tokens.pop_front();
+                        },
+                        _ => break,
+                    }
+                }
+                // extract body
+                while !self.tokens.is_empty() {
+                    let front = self.tokens.front().unwrap();
+                    if let Token::Statement(_, kw) = front {
+                        if String::from(kw) != String::from("VERSE") {
+                            body.push(self.parse_statement()?);
+                        } else {
+                            break;
                         }
-                        self.op_stack.push(op.clone());
-                    }
-                }
-                Token::Variable(name) => {
-                    let value = self.scope.get_var(name.clone());
-                    if value.is_none() {
-                        return Err(Error::new(
-                            ErrorType::NameError,
-                            &(format!("No such variable {}", name))[..],
-                            None,
-                        ));
                     } else {
-                        self.value_stack.push(value.unwrap().clone());
+                        return Err(Error::new(ErrorType::SyntaxError, "Illegal statement", Some(token.get_line())));
                     }
                 }
+                self.scope.pop();
+                return Ok(ASTNode::Function(*ln, name, args, body));
+            } else {
+                return Err(Error::new(ErrorType::SyntaxError, "Invalid start of function", Some(*ln)));
             }
-            self.advance();
+        } else {
+            return Err(Error::new(ErrorType::SyntaxError, "Invalid start of function", Some(token.get_line())));
         }
-        // try to pop all operations at the end
-        self.pop_all()?;
-        // if something went wrong while evaluating the expression...
-        if self.value_stack.len() != 1 || !self.op_stack.is_empty() {
-            return Err(Error::new(
-                ErrorType::SyntaxError,
-                "Illegal expression syntax",
-                None,
-            ));
+    }
+
+    pub fn parse(mut self) -> Result<HashMap<String, ASTNode>, Error> {
+        while !self.tokens.is_empty() {
+            // parse function
+            let fnc = self.parse_function()?;
+            if let ASTNode::Function(_, name, _, _) = &fnc {
+                self.output.insert(name.clone(), fnc);
+            } else {
+                return Err(Error::new(ErrorType::SyntaxError, "Statement not in function", Some(fnc.get_line())));
+            }
         }
-        // return a clone of the only value left in value_stack
-        return Ok(self.value_stack.last().unwrap().clone());
+        return Ok(self.output);
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,3 +424,4 @@ mod tests {
         );
     }
 }
+*/

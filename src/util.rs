@@ -55,8 +55,6 @@ pub enum Operator {
     LessEquals,
     Equals,
     NotEquals,
-    LParen,
-    RParen,
 }
 
 impl Operator {

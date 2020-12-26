@@ -3,20 +3,27 @@ use crate::lexer::Token;
 use crate::util::*;
 
 // special operator characters
-const OP_CHARS: &str = "!&|<>=";
+const OP_CHARS: &str = "!&|<>=~";
 
 #[derive(Debug)]
-pub struct Tokenizer {
+pub enum Expr {
+    Value(RickrollObject),
+    Name(String),
+    Operation(Operator, Vec<Expr>),
+}
+
+#[derive(Debug)]
+pub struct ExprLexer {
     raw: Vec<char>, // raw expression string
     ptr: usize,
     tokens: Vec<Token>,
     line: usize,
 }
 
-impl Tokenizer {
+impl ExprLexer {
     // makes a new tokenizer from the raw string
-    pub fn new(string: String, line: usize) -> Tokenizer {
-        Tokenizer {
+    pub fn new(string: String, line: usize) -> ExprLexer {
+        ExprLexer {
             raw: string.trim().chars().collect(),
             ptr: 0,
             tokens: Vec::new(),
@@ -267,7 +274,7 @@ impl Tokenizer {
         return match &opname[..] {
             // support only one "!" before an argument
             // multiple "!" can be formatted as "! !"
-            "&&" | "||" | ">" | "<" | ">=" | "<=" | "==" | "!=" | "!" => {
+            "&&" | "||" | ">" | "<" | ">=" | "<=" | "==" | "!=" | "!" | "~" => {
                 Ok(Token::Operator(self.line, opname))
             }
             _ => Err(Error::new(
@@ -276,5 +283,230 @@ impl Tokenizer {
                 None,
             )),
         };
+    }
+}
+
+// get operator from string
+pub fn get_operator(str: &String) -> Result<Operator, Error> {
+    use Operator::*;
+    return match &str[..] {
+        "||" => Ok(Or),
+        "&&" => Ok(And),
+        ">" => Ok(Greater),
+        "<" => Ok(Less),
+        ">=" => Ok(GreaterEquals),
+        "<=" => Ok(LessEquals),
+        "==" => Ok(Equals),
+        "!=" => Ok(NotEquals),
+        "+" => Ok(Add),
+        "-" => Ok(Subtract),
+        "*" => Ok(Multiply),
+        "/" => Ok(Divide),
+        "%" => Ok(Modulo),
+        ":" => Ok(ArrayAccess),
+        "!" => Ok(Not),
+        "~" => Ok(UnaryMinus),
+        _ => Err(Error::new(ErrorType::SyntaxError, &format!("Operator {} not found", str)[..], None)),
+    };
+}
+
+// get precedence of operator
+pub fn precedence_of(op: &Operator) -> usize {
+    use Operator::*;
+    // higher precedence is evaluated before lower
+    return match op {
+        Or => 1,
+        And => 2,
+        Greater | Less | GreaterEquals | LessEquals | Equals | NotEquals => 3,
+        Add | Subtract => 4,
+        Multiply | Divide | Modulo => 5,
+        ArrayAccess => 6,
+        Not => 7,
+        UnaryMinus => 8,
+    };
+}
+
+/*
+ * This expression parser utilizes Dijkstra's Shunting-yard algorithm
+ * for parsing infix expressions and converting them to ASTs.
+ * https://en.wikipedia.org/wiki/Shunting-yard_algorithm
+ */
+
+#[derive(Debug)]
+pub struct ExprParser {
+    tokens: Vec<Token>,
+    ptr: usize,
+    scope: Scope,
+    output_stack: Vec<Token>,   // output stack
+    op_stack: Vec<Token>,       // stack of operators and parenthesis
+}
+
+impl ExprParser {
+    pub fn new(tokens: Vec<Token>, scope: Scope) -> ExprParser {
+        ExprParser {
+            tokens,
+            ptr: 0,
+            output_stack: Vec::new(),
+            op_stack: Vec::new(),
+            scope,
+        }
+    }
+
+    fn has_more(&self) -> bool {
+        self.ptr < self.tokens.len()
+    }
+
+    // resolves as many operations as possible given the last operator
+    // all operators are left-associative
+    fn pop(&mut self, op: &Operator) -> Result<(), Error> {
+        while !self.op_stack.is_empty() {
+            let top = self.op_stack.last().unwrap();
+            if let Token::Punc(_, _) = top {
+                break; // will never be ")", only "("
+            }
+            match top {
+                Token::Operator(_, top_chr) => {
+                    // break if precedence is lower
+                    if precedence_of(&get_operator(top_chr)?) < precedence_of(op) {
+                        break;
+                    }
+                    self.output_stack.push(self.op_stack.pop().unwrap());
+                },
+                _ => panic!("ExprParser::pop called with non punctuation or operator"),
+            }
+        }
+        return Ok(());
+    }
+
+    // resolves all operations until there are no more operators
+    // or a left parenthesis is reached
+    fn pop_all(&mut self) -> Result<(), Error> {
+        while !self.op_stack.is_empty() {
+            let top = self.op_stack.pop().unwrap(); // pop top
+            if let Token::Punc(_, _) = top {
+                break; // will never be ")", only "("
+            }
+            match &top {
+                Token::Operator(_, op) => {
+                    get_operator(&op)?; // ensure operator is valid
+                    self.output_stack.push(top);
+                },
+                _ => panic!("ExprParser::pop_all called with non punctuation or operator"),
+            }
+        }
+        return Ok(());
+    }
+
+    // parses the tokens into RPN stored in output_stacl
+    fn to_rpn(&mut self) -> Result<(), Error> {
+        while self.has_more() {
+            let token = ((&self.tokens)[self.ptr]).clone(); // reference to a Token object
+            match &token {
+                Token::Value(_, _) => self.output_stack.push(token),
+                Token::Operator(_, op) => {
+                    let valid = get_operator(&op)?;
+                    if !valid.is_unary() {
+                        self.pop(&valid)?;
+                    }
+                    self.op_stack.push(token);
+                },
+                Token::Punc(_, punc) => {
+                    // "(" or ")"
+                    match &punc[..] {
+                        "(" => {
+                            self.op_stack.push(token);
+                        },
+                        ")" => {
+                            self.pop_all()?;
+                        },
+                        _ => panic!("Unexpected symbol found in ExprParser::to_rpn"),
+                    }
+                }
+                Token::Name(_, name) => {
+                    if self.scope.has_var(name.clone()) {
+                        self.output_stack.push(token);
+                    } else {
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &(format!("No such variable {}", name))[..],
+                            None,
+                        ));
+                    }
+                },
+                _ => panic!("Unexpected enum variant found in ExprParser::to_rpn")
+            }
+            self.ptr += 1;
+        }
+        // try to pop all operations at the end
+        self.pop_all()?;
+        return Ok(());
+    }
+
+    pub fn parse(mut self) -> Result<Expr, Error> {
+        self.to_rpn()?;
+        let mut stack: Vec<Expr> = Vec::new();
+        if self.output_stack.len() == 1 {
+            let tok = self.output_stack.pop().unwrap();
+            if let Token::Name(_, name) = tok {
+                return Ok(Expr::Name(name));
+            } else if let Token::Value(_, val) = tok {
+                return Ok(Expr::Value(val));
+            } else {
+                return Err(Error::new(ErrorType::SyntaxError, "Illegal expression", None));
+            }
+        }
+        while !self.output_stack.is_empty() {
+            let token = self.output_stack.pop().unwrap();
+            match token {
+                Token::Value(_, obj) => {
+                    let last = stack.last_mut().unwrap();
+                    match last {
+                        Expr::Operation(_, args) => {
+                            args.push(Expr::Value(obj.clone()));
+                        },
+                        _ => panic!("ExprParser::parse: Found non-operation in return stack"),
+                    }
+                },
+                Token::Operator(_, op) => {
+                    stack.push(Expr::Operation(get_operator(&op)?, Vec::new()));
+                },
+                Token::Name(_, name) => {
+                    let last = stack.last_mut().unwrap();
+                    match last {
+                        Expr::Operation(_, args) => {
+                            args.push(Expr::Name(name.clone()));
+                        },
+                        _ => panic!("ExprParser::parse: Found non-operation in return stack"),
+                    }
+                }
+                _ => panic!("Unexpected enum variant found in ExprParser::parse"),
+            }
+            while stack.len() > 1 {
+                let top_expr = stack.last().unwrap();
+                if let Expr::Operation(op, args) = top_expr {
+                    let enough_args;
+                    if op.is_unary() {
+                        enough_args = args.len() == 1;
+                    } else {
+                        enough_args = args.len() == 2;
+                    }
+                    if enough_args {
+                        let top_expr = stack.pop().unwrap();
+                        if let Expr::Operation(_, args) = stack.last_mut().unwrap() {
+                            args.push(top_expr);
+                        } else {
+                            panic!("ExprParser::parse: Found non-operation in return stack");
+                        }
+                    }
+                } else {
+                    panic!("ExprParser::parse: Found non-operation in return stack");
+                }
+            }
+        }
+        if stack.len() != 1 {
+            return Err(Error::new(ErrorType::SyntaxError, "Illegal expression", None));
+        } else {
+            return Ok(stack.pop().unwrap());
+        }
     }
 }

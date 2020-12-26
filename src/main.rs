@@ -1,4 +1,5 @@
 use rickroll::lexer::*;
+use rickroll::parser::*;
 
 use std::env::args;
 
@@ -34,12 +35,12 @@ Never gonna say a
     let ir = lexer.parse().unwrap();
     println!("{:?}", ir);
     eprintln!("\x1b[0;31mFinished lexing...\x1b[0m");
+    eprintln!("\x1b[0;31mStarted parsing...\x1b[0m");
+    let parser = Parser::new(ir);
+    let parsed = parser.parse().unwrap();
+    println!("{:?}", parsed);
+    eprintln!("\x1b[0;31mFinished parsing...\x1b[0m");
     /*
-    eprintln!("\x1b[0;31mStarted compiling...\x1b[0m");
-    let compiler = Compiler::new(ir);
-    let compiled = compiler.compile().unwrap();
-    println!("{}", compiled);
-    eprintln!("\x1b[0;31mFinished compiling...\x1b[0m");
     eprintln!("\x1b[0;31mStarted interpreting...\x1b[0m");
     let interpreter = Interpreter::new(compiled);
     println!(
