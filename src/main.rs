@@ -1,7 +1,9 @@
 use rickroll::lexer::*;
 use rickroll::parser::*;
+use rickroll::interpreter::*;
 
 use std::env::args;
+use std::io::*;
 
 fn main() {
     let mut arguments = args();
@@ -40,13 +42,11 @@ Never gonna say a
     let parsed = parser.parse().unwrap();
     println!("{:?}", parsed);
     eprintln!("\x1b[0;31mFinished parsing...\x1b[0m");
-    /*
     eprintln!("\x1b[0;31mStarted interpreting...\x1b[0m");
-    let interpreter = Interpreter::new(compiled);
+    let mut interpreter = Interpreter::new(parsed);
     println!(
         "\n{:#?}",
-        interpreter.execute(stdout(), BufReader::new(stdin()))
+        interpreter.run(&mut stdout(), &mut BufReader::new(stdin()))
     );
     eprintln!("\x1b[0;31mFinished interpreting...\x1b[0m");
-    */
 }

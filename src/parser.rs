@@ -1,11 +1,11 @@
 use crate::error::*;
+use crate::expr::*;
 use crate::lexer::Token;
 use crate::util::*;
-use crate::expr::*;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ASTNode {
     Say(usize, Expr),
     Let(usize, String),
@@ -85,15 +85,19 @@ impl Parser {
                         self.scope.pop();
                         self.tokens.pop_front();
                         return Ok(ASTNode::While(line, condition, body));
-                    },
+                    }
                     "IF_END" => {
                         self.scope.pop();
                         self.tokens.pop_front();
                         return Ok(ASTNode::If(line, condition, body));
-                    },
+                    }
                     "VERSE" => {
-                        return Err(Error::new(ErrorType::SyntaxError, "Unbalanced statements", Some(*ln)));
-                    },
+                        return Err(Error::new(
+                            ErrorType::SyntaxError,
+                            "Unbalanced statements",
+                            Some(*ln),
+                        ));
+                    }
                     _ => {
                         body.push(self.parse_statement()?);
                     }
@@ -102,7 +106,11 @@ impl Parser {
                 panic!("Parser::parse_loop called with invalid statement");
             }
         }
-        return Err(Error::new(ErrorType::SyntaxError, "Unbalanced statements", None));
+        return Err(Error::new(
+            ErrorType::SyntaxError,
+            "Unbalanced statements",
+            None,
+        ));
     }
 
     fn parse_statement(&mut self) -> Result<ASTNode, Error> {
@@ -111,32 +119,48 @@ impl Parser {
             match &kw[..] {
                 "SAY" => {
                     return Ok(ASTNode::Say(line, self.parse_expr()?));
-                },
+                }
                 "LET" => {
                     let name = self.get_name();
                     if self.scope.has_var(name.clone()) {
-                        return Err(Error::new(ErrorType::NameError, &format!("Variable name {} already exists", name)[..], Some(line)));
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &format!("Variable name {} already exists", name)[..],
+                            Some(line),
+                        ));
                     }
                     self.scope.add_var(name.clone());
                     return Ok(ASTNode::Let(line, name));
-                },
+                }
                 "ASSIGN" => {
                     let name = self.get_name();
                     if !self.scope.has_var(name.clone()) {
-                        return Err(Error::new(ErrorType::NameError, &format!("Variable name {} doesn't exist", name)[..], Some(line)));
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &format!("Variable name {} doesn't exist", name)[..],
+                            Some(line),
+                        ));
                     }
                     return Ok(ASTNode::Assign(line, name, self.parse_expr()?));
-                },
+                }
                 "CHECK" => {
                     return self.parse_loop(line);
-                },
+                }
                 "WHILE_END" | "IF_END" => {
-                    return Err(Error::new(ErrorType::SyntaxError, "Unbalanced statements", Some(line)));
-                },
+                    return Err(Error::new(
+                        ErrorType::SyntaxError,
+                        "Unbalanced statements",
+                        Some(line),
+                    ));
+                }
                 "RUN" => {
                     let name = self.get_name();
                     if !self.func_cache.contains(&name) {
-                        return Err(Error::new(ErrorType::NameError, &format!("Function name {} doesn't exist", name)[..], Some(line)));
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &format!("Function name {} doesn't exist", name)[..],
+                            Some(line),
+                        ));
                     }
                     let mut args: Vec<String> = Vec::new();
                     while !self.tokens.is_empty() {
@@ -149,12 +173,16 @@ impl Parser {
                         }
                     }
                     return Ok(ASTNode::Run(line, name, args));
-                },
+                }
                 "RUN_ASSIGN" => {
                     let var_name = self.get_name();
                     let name = self.get_name();
                     if !self.func_cache.contains(&name) {
-                        return Err(Error::new(ErrorType::NameError, &format!("Function name {} doesn't exist", name)[..], Some(line)));
+                        return Err(Error::new(
+                            ErrorType::NameError,
+                            &format!("Function name {} doesn't exist", name)[..],
+                            Some(line),
+                        ));
                     }
                     let mut args: Vec<String> = Vec::new();
                     while !self.tokens.is_empty() {
@@ -167,14 +195,18 @@ impl Parser {
                         }
                     }
                     return Ok(ASTNode::RunAssign(line, var_name, name, args));
-                },
+                }
                 "RETURN" => {
                     return Ok(ASTNode::Return(line, self.parse_expr()?));
-                },
+                }
                 _ => panic!("Parser::parse_statement called with invalid keyword {}", kw),
             }
         } else {
-            return Err(Error::new(ErrorType::SyntaxError, "Illegal statement", Some(token.get_line())));
+            return Err(Error::new(
+                ErrorType::SyntaxError,
+                "Illegal statement",
+                Some(token.get_line()),
+            ));
         }
     }
 
@@ -193,7 +225,11 @@ impl Parser {
                 };
                 // insert into func_cache
                 if self.func_cache.contains(&name) {
-                    return Err(Error::new(ErrorType::NameError, &format!("Function named {} already exists", name)[..], Some(*ln)));
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &format!("Function named {} already exists", name)[..],
+                        Some(*ln),
+                    ));
                 }
                 self.func_cache.insert(name.clone());
                 // extract arguments
@@ -205,7 +241,7 @@ impl Parser {
                             args.push(name.clone());
                             self.scope.add_var(name.clone());
                             self.tokens.pop_front();
-                        },
+                        }
                         _ => break,
                     }
                 }
@@ -219,16 +255,28 @@ impl Parser {
                             break;
                         }
                     } else {
-                        return Err(Error::new(ErrorType::SyntaxError, "Illegal statement", Some(token.get_line())));
+                        return Err(Error::new(
+                            ErrorType::SyntaxError,
+                            "Illegal statement",
+                            Some(token.get_line()),
+                        ));
                     }
                 }
                 self.scope.pop();
                 return Ok(ASTNode::Function(*ln, name, args, body));
             } else {
-                return Err(Error::new(ErrorType::SyntaxError, "Invalid start of function", Some(*ln)));
+                return Err(Error::new(
+                    ErrorType::SyntaxError,
+                    "Invalid start of function",
+                    Some(*ln),
+                ));
             }
         } else {
-            return Err(Error::new(ErrorType::SyntaxError, "Invalid start of function", Some(token.get_line())));
+            return Err(Error::new(
+                ErrorType::SyntaxError,
+                "Invalid start of function",
+                Some(token.get_line()),
+            ));
         }
     }
 
@@ -239,7 +287,11 @@ impl Parser {
             if let ASTNode::Function(_, name, _, _) = &fnc {
                 self.output.insert(name.clone(), fnc);
             } else {
-                return Err(Error::new(ErrorType::SyntaxError, "Statement not in function", Some(fnc.get_line())));
+                return Err(Error::new(
+                    ErrorType::SyntaxError,
+                    "Statement not in function",
+                    Some(fnc.get_line()),
+                ));
             }
         }
         return Ok(self.output);

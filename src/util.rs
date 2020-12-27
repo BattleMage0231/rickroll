@@ -96,7 +96,7 @@ impl Context {
         self.vars.insert(name, value);
     }
 
-    pub fn get_var(&mut self, name: String) -> Option<RickrollObject> {
+    pub fn get_var(&self, name: String) -> Option<RickrollObject> {
         if self.vars.contains_key(&name) {
             return Some(self.vars.get(&name).unwrap().clone());
         } else {
@@ -121,6 +121,13 @@ impl Scope {
         }
     }
 
+    pub fn from_vec(contexts: Vec<Context>) -> Scope {
+        if contexts.is_empty() {
+            panic!("Empty scope cannot be created");
+        }
+        Scope { contexts }
+    }
+
     pub fn len(&self) -> usize {
         self.contexts.len()
     }
@@ -133,9 +140,13 @@ impl Scope {
         self.contexts.append(&mut contexts);
     }
 
+    pub fn head(&mut self) -> &Context {
+        return &self.contexts[0];
+    }
+
     pub fn behead(&mut self) -> Vec<Context> {
-        if self.contexts.is_empty() {
-            panic!("Empty scope cannot be beheaded");
+        if self.contexts.len() < 2 {
+            panic!("Empty or unit scope cannot be beheaded");
         }
         let tail = Vec::from(&self.contexts[1..]);
         self.contexts.truncate(1);
@@ -165,8 +176,8 @@ impl Scope {
 
     // gets the value of a variable in the scope
     // returns None if variable doesn't exist
-    pub fn get_var(&mut self, name: String) -> Option<RickrollObject> {
-        for context in self.contexts.iter_mut().rev() {
+    pub fn get_var(&self, name: String) -> Option<RickrollObject> {
+        for context in self.contexts.iter().rev() {
             if context.has_var(name.clone()) {
                 return Some(context.get_var(name).unwrap());
             }

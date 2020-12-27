@@ -5,7 +5,7 @@ use crate::util::*;
 // special operator characters
 const OP_CHARS: &str = "!&|<>=~";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Value(RickrollObject),
     Name(String),
@@ -306,7 +306,11 @@ pub fn get_operator(str: &String) -> Result<Operator, Error> {
         ":" => Ok(ArrayAccess),
         "!" => Ok(Not),
         "~" => Ok(UnaryMinus),
-        _ => Err(Error::new(ErrorType::SyntaxError, &format!("Operator {} not found", str)[..], None)),
+        _ => Err(Error::new(
+            ErrorType::SyntaxError,
+            &format!("Operator {} not found", str)[..],
+            None,
+        )),
     };
 }
 
@@ -337,8 +341,8 @@ pub struct ExprParser {
     tokens: Vec<Token>,
     ptr: usize,
     scope: Scope,
-    output_stack: Vec<Token>,   // output stack
-    op_stack: Vec<Token>,       // stack of operators and parenthesis
+    output_stack: Vec<Token>, // output stack
+    op_stack: Vec<Token>,     // stack of operators and parenthesis
 }
 
 impl ExprParser {
@@ -371,7 +375,7 @@ impl ExprParser {
                         break;
                     }
                     self.output_stack.push(self.op_stack.pop().unwrap());
-                },
+                }
                 _ => panic!("ExprParser::pop called with non punctuation or operator"),
             }
         }
@@ -390,7 +394,7 @@ impl ExprParser {
                 Token::Operator(_, op) => {
                     get_operator(&op)?; // ensure operator is valid
                     self.output_stack.push(top);
-                },
+                }
                 _ => panic!("ExprParser::pop_all called with non punctuation or operator"),
             }
         }
@@ -409,16 +413,16 @@ impl ExprParser {
                         self.pop(&valid)?;
                     }
                     self.op_stack.push(token);
-                },
+                }
                 Token::Punc(_, punc) => {
                     // "(" or ")"
                     match &punc[..] {
                         "(" => {
                             self.op_stack.push(token);
-                        },
+                        }
                         ")" => {
                             self.pop_all()?;
-                        },
+                        }
                         _ => panic!("Unexpected symbol found in ExprParser::to_rpn"),
                     }
                 }
@@ -432,8 +436,8 @@ impl ExprParser {
                             None,
                         ));
                     }
-                },
-                _ => panic!("Unexpected enum variant found in ExprParser::to_rpn")
+                }
+                _ => panic!("Unexpected enum variant found in ExprParser::to_rpn"),
             }
             self.ptr += 1;
         }
@@ -452,7 +456,11 @@ impl ExprParser {
             } else if let Token::Value(_, val) = tok {
                 return Ok(Expr::Value(val));
             } else {
-                return Err(Error::new(ErrorType::SyntaxError, "Illegal expression", None));
+                return Err(Error::new(
+                    ErrorType::SyntaxError,
+                    "Illegal expression",
+                    None,
+                ));
             }
         }
         while !self.output_stack.is_empty() {
@@ -463,19 +471,19 @@ impl ExprParser {
                     match last {
                         Expr::Operation(_, args) => {
                             args.push(Expr::Value(obj.clone()));
-                        },
+                        }
                         _ => panic!("ExprParser::parse: Found non-operation in return stack"),
                     }
-                },
+                }
                 Token::Operator(_, op) => {
                     stack.push(Expr::Operation(get_operator(&op)?, Vec::new()));
-                },
+                }
                 Token::Name(_, name) => {
                     let last = stack.last_mut().unwrap();
                     match last {
                         Expr::Operation(_, args) => {
                             args.push(Expr::Name(name.clone()));
-                        },
+                        }
                         _ => panic!("ExprParser::parse: Found non-operation in return stack"),
                     }
                 }
@@ -504,7 +512,11 @@ impl ExprParser {
             }
         }
         if stack.len() != 1 {
-            return Err(Error::new(ErrorType::SyntaxError, "Illegal expression", None));
+            return Err(Error::new(
+                ErrorType::SyntaxError,
+                "Illegal expression",
+                None,
+            ));
         } else {
             return Ok(stack.pop().unwrap());
         }

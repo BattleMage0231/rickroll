@@ -1,10 +1,9 @@
-use crate::compiler::{Bytecode, Function, Instruction};
 use crate::error::*;
-use crate::parser::Parser;
-use crate::tokenizer::Token;
+use crate::expr::*;
+use crate::parser::*;
 use crate::util::*;
 
-use std::collections::VecDeque;
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
 pub const MAX_RECURSION_DEPTH: usize = 10000;
@@ -12,213 +11,337 @@ pub const MAX_UNWIND_LIMIT: usize = 8;
 
 #[derive(Debug)]
 pub struct Interpreter {
-    bytecode: Bytecode,
-    scope: Scope,                           // global scope -> scope1... -> current scope
-    function_stack: Vec<(Function, usize)>, // function call stack
-    context_stack: Vec<Vec<Context>>,       // context for function calls
-    arg_queue: VecDeque<RickrollObject>,    // function argument queue
+    functions: HashMap<String, ASTNode>,
+}
+
+fn eval_err(op: &Operator) -> Error {
+    Error::new(
+        ErrorType::IllegalArgumentError,
+        &format!("Illegal types for operation {:?}", op)[..],
+        None,
+    )
 }
 
 impl Interpreter {
-    pub fn new(bytecode: Bytecode) -> Interpreter {
+    pub fn new(functions: HashMap<String, ASTNode>) -> Interpreter {
         Interpreter {
-            bytecode,
-            scope: Scope::new(), // global scope is constructed inside Scope::new
-            function_stack: Vec::new(),
-            context_stack: Vec::new(),
-            arg_queue: VecDeque::new(),
+            functions,
         }
     }
 
-    // displays debug info
-    fn unwind_stack(&mut self, err: Error) -> Error {
-        let mut unwind_count = 0;
-        let mut err = err;
-        while !self.function_stack.is_empty() {
-            let (func, line) = self.function_stack.pop().unwrap();
-            if line >= func.len() || func.debug_line(line) == 0 {
-                err = Error::traceback(err, None);
-            } else {
-                err = Error::traceback(err, Some(func.debug_line(line)));
-            }
-            unwind_count += 1;
-            if unwind_count > MAX_UNWIND_LIMIT {
-                break;
-            }
+    // wraps a traceback around a possible error
+    fn wrap_check<T>(&self, res: Result<T, Error>, ln: usize) -> Result<T, Error> {
+        if let Err(error) = res {
+            return Err(Error::traceback(error, Some(ln)));
         }
-        return err;
+        return res;
     }
 
-    // evaluates an expression using the parser and error-wraps its result
-    fn eval(&self, tokens: Vec<Token>) -> Result<RickrollObject, Error> {
-        let parser = Parser::new(tokens, self.scope.clone());
-        return parser.eval();
+    fn eval(&self, expr: &Expr, scope: &Scope) -> Result<RickrollObject, Error> {
+        match expr {
+            Expr::Value(obj) => Ok(obj.clone()),
+            Expr::Name(name) => {
+                if scope.has_var(name.clone()) {
+                    return Ok(scope.get_var(name.clone()).unwrap());
+                } else {
+                    return Err(Error::new(
+                        ErrorType::NameError,
+                        &format!("Variable {} doesn't exist", name)[..],
+                        None,
+                    ));
+                }
+            }
+            Expr::Operation(op, args) => {
+                use Operator::*;
+                use RickrollObject::*;
+                if op.is_unary() && args.len() == 1 {
+                    let operand = self.eval(&args[0], scope)?;
+                    return match op {
+                        UnaryMinus => match operand {
+                            Int(x) => Ok(Int(-x)),
+                            Float(x) => Ok(Float(-x)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Not => match operand {
+                            Bool(x) => Ok(Bool(!x)),
+                            _ => Err(eval_err(op)),
+                        },
+                        _ => panic!("Unary operator is not unary!"),
+                    };
+                } else if !op.is_unary() && args.len() == 2 {
+                    // expressions operands start from the top
+                    let first = self.eval(&args[1], scope)?;
+                    let second = self.eval(&args[0], scope)?;
+                    let ans = match op {
+                        ArrayAccess => match (first, second) {
+                            (Array(arr), Int(x)) => Ok(arr[x as usize].clone()),
+                            _ => Err(eval_err(op)),
+                        },
+                        Add => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Int(x + y)),
+                            (Float(x), Float(y)) => Ok(Float(x + y)),
+                            (Int(x), Float(y)) | (Float(y), Int(x)) => Ok(Float(x as f32 + y)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Subtract => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Int(x - y)),
+                            (Float(x), Float(y)) => Ok(Float(x - y)),
+                            (Int(x), Float(y)) => Ok(Float(x as f32 - y)),
+                            (Float(x), Int(y)) => Ok(Float(x - y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Multiply => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Int(x * y)),
+                            (Float(x), Float(y)) => Ok(Float(x * y)),
+                            (Int(x), Float(y)) | (Float(y), Int(x)) => Ok(Float(x as f32 * y)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Divide => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Int(x / y)),
+                            (Float(x), Float(y)) => Ok(Float(x / y)),
+                            (Int(x), Float(y)) => Ok(Float(x as f32 / y)),
+                            (Float(x), Int(y)) => Ok(Float(x / y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Modulo => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Int(x % y)),
+                            (Float(x), Float(y)) => Ok(Float(x % y)),
+                            (Int(x), Float(y)) => Ok(Float(x as f32 % y)),
+                            (Float(x), Int(y)) => Ok(Float(x % y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        And => match (first, second) {
+                            (Bool(x), Bool(y)) => Ok(Bool(x && y)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Or => match (first, second) {
+                            (Bool(x), Bool(y)) => Ok(Bool(x || y)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Greater => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Bool(x > y)),
+                            (Float(x), Float(y)) => Ok(Bool(x > y)),
+                            (Int(x), Float(y)) => Ok(Bool(x as f32 > y)),
+                            (Float(x), Int(y)) => Ok(Bool(x > y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Less => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Bool(x < y)),
+                            (Float(x), Float(y)) => Ok(Bool(x < y)),
+                            (Int(x), Float(y)) => Ok(Bool((x as f32) < y)),
+                            (Float(x), Int(y)) => Ok(Bool(x < y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        GreaterEquals => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Bool(x >= y)),
+                            (Float(x), Float(y)) => Ok(Bool(x >= y)),
+                            (Int(x), Float(y)) => Ok(Bool(x as f32 >= y)),
+                            (Float(x), Int(y)) => Ok(Bool(x >= y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        LessEquals => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Bool(x <= y)),
+                            (Float(x), Float(y)) => Ok(Bool(x <= y)),
+                            (Int(x), Float(y)) => Ok(Bool(x as f32 <= y)),
+                            (Float(x), Int(y)) => Ok(Bool(x <= y as f32)),
+                            _ => Err(eval_err(op)),
+                        },
+                        Equals => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Bool(x == y)),
+                            (Float(x), Float(y)) => Ok(Bool(x == y)),
+                            (Int(x), Float(y)) => Ok(Bool(x as f32 == y)),
+                            (Float(x), Int(y)) => Ok(Bool(x == y as f32)),
+                            (Bool(x), Bool(y)) => Ok(Bool(x == y)),
+                            (Char(x), Char(y)) => Ok(Bool(x == y)),
+                            _ => Ok(Bool(false)), // default false
+                        },
+                        NotEquals => match (first, second) {
+                            (Int(x), Int(y)) => Ok(Bool(x != y)),
+                            (Float(x), Float(y)) => Ok(Bool(x != y)),
+                            (Int(x), Float(y)) => Ok(Bool(x as f32 != y)),
+                            (Float(x), Int(y)) => Ok(Bool(x != y as f32)),
+                            (Bool(x), Bool(y)) => Ok(Bool(x != y)),
+                            (Char(x), Char(y)) => Ok(Bool(x != y)),
+                            _ => Ok(Bool(true)), // default true
+                        },
+                        _ => panic!("Binary operator is not binary!"),
+                    };
+                    return ans;
+                } else {
+                    return Err(Error::new(ErrorType::NameError, "Illegal operation", None));
+                }
+            }
+        }
+    }
+
+    // execute a statement
+    // returns Ok(obj) if the function should return
+    pub fn execute(
+        &mut self,
+        statement: &ASTNode,
+        scope: &mut Scope,
+        buffer: &mut dyn Write,
+        reader: &mut dyn BufRead,
+    ) -> Result<Option<RickrollObject>, Error> {
+        match statement {
+            ASTNode::Say(ln, expr) => {
+                let res = self.wrap_check(self.eval(expr, scope), *ln)?;
+                writeln!(buffer, "{}", res).expect("Error when writing to buffer");
+            }
+            ASTNode::Let(_, name) => {
+                scope.add_var(name.clone());
+            }
+            ASTNode::Assign(ln, name, expr) => {
+                let res = self.wrap_check(self.eval(expr, scope), *ln)?;
+                scope.set_var(name.clone(), res);
+            }
+            ASTNode::While(ln, cond, body) => loop {
+                let res = self.wrap_check(self.eval(cond, scope), *ln)?;
+                match res {
+                    RickrollObject::Bool(x) => {
+                        if !x {
+                            break;
+                        }
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            ErrorType::RuntimeError,
+                            "While condition is not boolean",
+                            Some(*ln),
+                        ))
+                    }
+                }
+                scope.push(Context::new());
+                for node in body {
+                    let res = self.execute(node, scope, buffer, reader)?;
+                    match res {
+                        Some(obj) => return Ok(Some(obj)),
+                        None => (),
+                    }
+                }
+                scope.pop();
+            },
+            ASTNode::If(ln, cond, body) => {
+                let res = self.wrap_check(self.eval(cond, scope), *ln)?;
+                match res {
+                    RickrollObject::Bool(x) => {
+                        if x {
+                            scope.push(Context::new());
+                            for node in body {
+                                let res = self.execute(node, scope, buffer, reader)?;
+                                match res {
+                                    Some(obj) => return Ok(Some(obj)),
+                                    None => (),
+                                }
+                            }
+                            scope.pop();
+                        }
+                    }
+                    _ => {
+                        return Err(Error::new(
+                            ErrorType::RuntimeError,
+                            "While condition is not boolean",
+                            Some(*ln),
+                        ))
+                    }
+                }
+            }
+            ASTNode::Run(ln, func, args) => {
+                let mut passed: Vec<RickrollObject> = Vec::new();
+                for arg in args {
+                    passed.push(scope.get_var(arg.clone()).unwrap());
+                }
+                let tail = scope.behead();
+                scope.push(Context::new());
+                let res = self.run_function(func.clone(), passed, scope, buffer, reader);
+                self.wrap_check(res, *ln)?;
+                scope.behead();
+                scope.push_all(tail);
+            }
+            ASTNode::RunAssign(ln, var, func, args) => {
+                let mut passed: Vec<RickrollObject> = Vec::new();
+                for arg in args {
+                    passed.push(scope.get_var(arg.clone()).unwrap());
+                }
+                let tail = scope.behead();
+                scope.push(Context::new());
+                let res = self.run_function(func.clone(), passed, scope, buffer, reader);
+                let res = self.wrap_check(res, *ln)?;
+                scope.behead();
+                scope.push_all(tail);
+                scope.set_var(var.clone(), res);
+            },
+            ASTNode::Return(ln, expr) => {
+                let res = self.wrap_check(self.eval(expr, scope), *ln)?;
+                return Ok(Some(res));
+            },
+            _ => {
+                panic!("Interpreter::execute called with Function");
+            },
+        }
+        return Ok(None);
     }
 
     // executes a function
-    pub fn run<W, R>(
+    pub fn run_function(
         &mut self,
         func: String,
-        buffer: &mut W,
-        reader: &mut R,
-    ) -> Result<RickrollObject, Error>
-    where
-        W: Write,
-        R: BufRead,
-    {
-        let mut function = self.bytecode.get_func(func.clone()); // get function bytecode
-        self.function_stack.push((function.clone(), 0)); // push current function to stack
-        let mut ptr = 0;
-        loop {
-            // stack overflow
-            if self.function_stack.len() >= MAX_RECURSION_DEPTH {
-                return Err(Error::new(
-                    ErrorType::StackOverflowError,
-                    &(format!(
-                        "Too many recursive calls for function {}",
-                        function.get_name()
-                    ))[..],
-                    Some(self.bytecode.get_func(func.clone()).debug_line(0)),
-                ));
-            }
-            let opcode = &function[ptr];
-            use Instruction::*;
-            match opcode {
-                Put(tokens) => {
-                    writeln!(buffer, "{}", self.eval(tokens.clone())?)
-                        .expect("Error when writing to buffer");
+        passed: Vec<RickrollObject>,
+        scope: &mut Scope,
+        buffer: &mut dyn Write,
+        reader: &mut dyn BufRead,
+    ) -> Result<RickrollObject, Error> {
+        let function = self.functions.get(&func).unwrap().clone();
+        match function {
+            ASTNode::Function(_, _, args, body) => {
+                // function arguments
+                for (arg, val) in args.iter().zip(passed.iter()) {
+                    scope.add_var(arg.clone());
+                    scope.set_var(arg.clone(), val.clone());
                 }
-                Let(varname) => {
-                    self.scope.add_var(varname.clone());
-                }
-                Glb(varname) => {
-                    self.scope
-                        .get_global()
-                        .set_var(varname.clone(), RickrollObject::Undefined);
-                }
-                Set(varname, tokens) => {
-                    let val = self.eval(tokens.clone())?;
-                    self.scope.set_var(varname.clone(), val);
-                }
-                Jmp(dest) => {
-                    ptr = *dest;
-                    continue; // do not advance()
-                }
-                Jmpif(tokens, dest) => {
-                    // jump??
-                    let val = self.eval(tokens.clone())?;
-                    let jump = match val {
-                        RickrollObject::Bool(x) => x,
-                        _ => {
-                            return Err(Error::new(
-                                ErrorType::IllegalArgumentError,
-                                "Unexpected non-boolean argument",
-                                Some(function.debug_line(ptr)),
-                            ));
-                        }
-                    };
-                    if jump {
-                        ptr = *dest;
-                        continue; // do not advance()
+                for node in body {
+                    let res = self.execute(&node, scope, buffer, reader)?;
+                    match res {
+                        Some(obj) => { 
+                            return Ok(obj);
+                        },
+                        None => (),
                     }
                 }
-                Pctx() => {
-                    self.scope.push(Context::new());
-                }
-                Dctx() => {
-                    self.scope.pop();
-                }
-                Call(func) => {
-                    self.function_stack.last_mut().unwrap().1 = ptr;
-                    self.context_stack.push(self.scope.behead()); // store current state
-                    function = self.bytecode.get_func(func.clone()); // replace function
-                    ptr = 0;
-                    self.function_stack.push((function.clone(), 0));
-                    continue;
-                }
-                Scall(_, func) => {
-                    self.function_stack.last_mut().unwrap().1 = ptr;
-                    self.context_stack.push(self.scope.behead()); // store current state
-                    function = self.bytecode.get_func(func.clone());
-                    ptr = 0;
-                    self.function_stack.push((function.clone(), 0));
-                    continue;
-                }
-                Ret(tokens) => {
-                    let result = self.eval(tokens.clone())?; // eval result
-                    self.scope.behead(); // remove all contexts except for global
-                    self.function_stack.pop(); // pop current function
-                                               // no more functions
-                    if self.function_stack.is_empty() {
-                        return Ok(result);
-                    }
-                    self.scope.push_all(self.context_stack.pop().unwrap()); // repush contexts
-                                                                            // replace function and ptr with last value
-                    let last = self.function_stack.last().unwrap();
-                    function = last.0.clone();
-                    ptr = last.1;
-                    // check for scall
-                    if let Scall(varname, _) = function[ptr].clone() {
-                        // set variable
-                        self.scope.set_var(varname, result);
-                    }
-                }
-                Pushq(var) => {
-                    self.arg_queue
-                        .push_back(self.scope.get_var(var.clone()).unwrap());
-                }
-                Exp(var) => {
-                    self.scope.add_var(var.clone());
-                    self.scope
-                        .set_var(var.clone(), self.arg_queue.pop_front().unwrap());
-                }
+                return Ok(RickrollObject::Undefined);
             }
-            /* debug
-            let mut test = Vec::new();
-            for x in self.function_stack.iter() {
-                let (func, line) = x.clone();
-                test.push((func.get_name().clone(), line));
-            }
-            test.last_mut().unwrap().1 = ptr;
-            println!("{:?}", test);
-            println!("{:?}\n", self.scope);
-            */
-            ptr += 1; // increment pointer
-        }
+            _ => panic!("Interpreter::run_function called with non-function"),
+        };
     }
 
-    // takes in a mutable buffer and reader rather than
-    // writing to stdout and reading from stdin
-    pub fn execute<W, R>(mut self, mut buffer: W, mut reader: R) -> Result<RickrollObject, Error>
-    where
-        W: Write,
-        R: BufRead,
-    {
-        // must have a main to execute
-        if !self.bytecode.has_main() {
+    // execute the program
+    pub fn run(
+        &mut self,
+        buffer: &mut dyn Write,
+        reader: &mut dyn BufRead,
+    ) -> Result<RickrollObject, Error> {
+        let mut global_scope = Scope::new();
+        if self.functions.contains_key(&String::from("[INTRO]")) {
+            self.run_function(String::from("[INTRO]"), Vec::new(), &mut global_scope, buffer, reader)?;
+        }
+        if self.functions.contains_key(&String::from("[CHORUS]")) {
+            global_scope.push(Context::new());
+            let val = self.run_function(
+                String::from("[CHORUS]"),
+                Vec::new(),
+                &mut global_scope,
+                buffer,
+                reader,
+            );
+            global_scope.pop();
+            return val;
+        } else {
             return Err(Error::new(
                 ErrorType::RuntimeError,
-                "Could not find a [Chorus] to execute",
+                "No main function found",
                 None,
             ));
         }
-        // global is optional
-        if self.bytecode.has_global() {
-            // run global
-            match self.run(String::from("[Global]"), &mut buffer, &mut reader) {
-                Err(error) => {
-                    return Err(self.unwind_stack(error));
-                }
-                Ok(_) => (),
-            }
-        }
-        // run main
-        return match self.run(String::from("[Main]"), &mut buffer, &mut reader) {
-            Err(error) => {
-                return Err(self.unwind_stack(error));
-            }
-            Ok(obj) => Ok(obj),
-        };
     }
 }
 
