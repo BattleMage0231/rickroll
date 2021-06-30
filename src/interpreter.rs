@@ -297,7 +297,7 @@ impl Interpreter {
             for arg in passed {
                 arg_vals.push(arg.clone());
             }
-            return BUILTIN_FUNCTIONS[&func](arg_vals);
+            return BUILTIN_FUNCTIONS[&func](arg_vals, buffer, reader);
         }
         let function = self.functions.get(&func).unwrap().clone();
         match function {
