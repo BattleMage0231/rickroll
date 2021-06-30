@@ -79,36 +79,28 @@ impl Interpreter {
                             _ => Err(eval_err(op)),
                         },
                         Add => match (first, second) {
-                            (Int(x), Int(y)) => Ok(Int(x + y)),
+                            (Int(x), Int(y)) => Ok(Int(x.wrapping_add(y))),
                             (Float(x), Float(y)) => Ok(Float(x + y)),
-                            (Int(x), Float(y)) | (Float(y), Int(x)) => Ok(Float(x as f32 + y)),
                             _ => Err(eval_err(op)),
                         },
                         Subtract => match (first, second) {
-                            (Int(x), Int(y)) => Ok(Int(x - y)),
+                            (Int(x), Int(y)) => Ok(Int(x.wrapping_sub(y))),
                             (Float(x), Float(y)) => Ok(Float(x - y)),
-                            (Int(x), Float(y)) => Ok(Float(x as f32 - y)),
-                            (Float(x), Int(y)) => Ok(Float(x - y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         Multiply => match (first, second) {
-                            (Int(x), Int(y)) => Ok(Int(x * y)),
+                            (Int(x), Int(y)) => Ok(Int(x.wrapping_mul(y))),
                             (Float(x), Float(y)) => Ok(Float(x * y)),
-                            (Int(x), Float(y)) | (Float(y), Int(x)) => Ok(Float(x as f32 * y)),
                             _ => Err(eval_err(op)),
                         },
                         Divide => match (first, second) {
-                            (Int(x), Int(y)) => Ok(Int(x / y)),
+                            (Int(x), Int(y)) => Ok(Int(x.wrapping_div(y))),
                             (Float(x), Float(y)) => Ok(Float(x / y)),
-                            (Int(x), Float(y)) => Ok(Float(x as f32 / y)),
-                            (Float(x), Int(y)) => Ok(Float(x / y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         Modulo => match (first, second) {
-                            (Int(x), Int(y)) => Ok(Int(x % y)),
+                            (Int(x), Int(y)) => Ok(Int(x.wrapping_rem(y))),
                             (Float(x), Float(y)) => Ok(Float(x % y)),
-                            (Int(x), Float(y)) => Ok(Float(x as f32 % y)),
-                            (Float(x), Int(y)) => Ok(Float(x % y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         And => match (first, second) {
@@ -122,36 +114,26 @@ impl Interpreter {
                         Greater => match (first, second) {
                             (Int(x), Int(y)) => Ok(Bool(x > y)),
                             (Float(x), Float(y)) => Ok(Bool(x > y)),
-                            (Int(x), Float(y)) => Ok(Bool(x as f32 > y)),
-                            (Float(x), Int(y)) => Ok(Bool(x > y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         Less => match (first, second) {
                             (Int(x), Int(y)) => Ok(Bool(x < y)),
                             (Float(x), Float(y)) => Ok(Bool(x < y)),
-                            (Int(x), Float(y)) => Ok(Bool((x as f32) < y)),
-                            (Float(x), Int(y)) => Ok(Bool(x < y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         GreaterEquals => match (first, second) {
                             (Int(x), Int(y)) => Ok(Bool(x >= y)),
                             (Float(x), Float(y)) => Ok(Bool(x >= y)),
-                            (Int(x), Float(y)) => Ok(Bool(x as f32 >= y)),
-                            (Float(x), Int(y)) => Ok(Bool(x >= y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         LessEquals => match (first, second) {
                             (Int(x), Int(y)) => Ok(Bool(x <= y)),
                             (Float(x), Float(y)) => Ok(Bool(x <= y)),
-                            (Int(x), Float(y)) => Ok(Bool(x as f32 <= y)),
-                            (Float(x), Int(y)) => Ok(Bool(x <= y as f32)),
                             _ => Err(eval_err(op)),
                         },
                         Equals => match (first, second) {
                             (Int(x), Int(y)) => Ok(Bool(x == y)),
                             (Float(x), Float(y)) => Ok(Bool(x == y)),
-                            (Int(x), Float(y)) => Ok(Bool(x as f32 == y)),
-                            (Float(x), Int(y)) => Ok(Bool(x == y as f32)),
                             (Bool(x), Bool(y)) => Ok(Bool(x == y)),
                             (Char(x), Char(y)) => Ok(Bool(x == y)),
                             _ => Ok(Bool(false)), // default false
@@ -159,8 +141,6 @@ impl Interpreter {
                         NotEquals => match (first, second) {
                             (Int(x), Int(y)) => Ok(Bool(x != y)),
                             (Float(x), Float(y)) => Ok(Bool(x != y)),
-                            (Int(x), Float(y)) => Ok(Bool(x as f32 != y)),
-                            (Float(x), Int(y)) => Ok(Bool(x != y as f32)),
                             (Bool(x), Bool(y)) => Ok(Bool(x != y)),
                             (Char(x), Char(y)) => Ok(Bool(x != y)),
                             _ => Ok(Bool(true)), // default true
