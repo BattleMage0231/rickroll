@@ -148,13 +148,8 @@ impl ExprLexer {
 
     // parses a number starting at self.ptr
     fn make_number(&mut self) -> Result<Token, Error> {
-        // number can either be integer or float
-        let mut inum = 0_i32;
-        let mut fnum = 0_f32;
-        // whether number is float
         let mut float = false;
-        // number of decimal digits
-        let mut dig = 0_i32;
+        let mut raw = String::new();
         let mut chr = self.raw[self.ptr]; // cur char
         loop {
             // '.' means number is floating point
@@ -167,40 +162,9 @@ impl ExprLexer {
                         None,
                     ));
                 }
-                // replace inum with fnum
                 float = true;
-                dig = 1;
-                fnum = inum as f32;
-            } else {
-                // if float, must be in decimal digits
-                if float {
-                    fnum += (chr.to_digit(10).unwrap() as f32) / ((10.0_f32).powi(dig));
-                    dig += 1;
-                } else {
-                    // if int, must be units digit
-                    match inum.checked_mul(10) {
-                        None => {
-                            return Err(Error::new(
-                                ErrorType::IllegalArgumentError,
-                                "Integer or float literal too large",
-                                None,
-                            ))
-                        }
-                        Some(x) => inum = x,
-                    }
-                    let curdig = chr.to_digit(10).unwrap() as i32;
-                    match inum.checked_add(curdig) {
-                        None => {
-                            return Err(Error::new(
-                                ErrorType::IllegalArgumentError,
-                                "Integer or float literal too large",
-                                None,
-                            ))
-                        }
-                        Some(x) => inum = x,
-                    }
-                }
             }
+            raw.push(chr);
             self.ptr += 1;
             // check if still part of number
             if self.has_more() {
@@ -214,15 +178,27 @@ impl ExprLexer {
                 break;
             }
         }
-        // return float/int depending on value
-        return Ok(Token::Value(
-            self.line,
-            if float {
-                RickrollObject::Float(fnum)
-            } else {
-                RickrollObject::Int(inum)
-            },
-        ));
+        if float {
+            let res = raw.parse::<f32>();
+            match res {
+                Ok(val) => return Ok(Token::Value(self.line, RickrollObject::Float(val))),
+                Err(_) => return Err(Error::new(
+                    ErrorType::IllegalArgumentError,
+                    "Improper floating point literal",
+                    None,
+                )),
+            }
+        } else {
+            let res = raw.parse::<i32>();
+            match res {
+                Ok(val) => return Ok(Token::Value(self.line, RickrollObject::Int(val))),
+                Err(_) => return Err(Error::new(
+                    ErrorType::IllegalArgumentError,
+                    "Improper integer literal",
+                    None,
+                )),
+            }
+        }
     }
 
     // makes a variable/constant starting at ptr

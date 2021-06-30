@@ -6,16 +6,31 @@ use std::env::args;
 use std::io::*;
 
 fn main() {
-    let raw = String::from("
-    [Chorus]
-    Never gonna let x down
-    (Ooh give you x) Never gonna run ReadLine and desert you
-    Never gonna say x
-    (Ooh give you x) Never gonna run ReadLine and desert you
-    Never gonna say x
-    (Ooh give you x) Never gonna run ReadLine and desert you
-    Never gonna say x
-    ");
+    let mut arguments = args();
+    arguments.next();
+    let raw = format!(
+        "\
+[Verse fib]
+(Ooh give you a)
+Inside we both know a <= 1
+  (Ooh) Never gonna give, never gonna give (give you a)
+Your heart's been aching but you're too shy to say it
+Never gonna let b down
+Never gonna let c down
+Never gonna give b a - 1
+Never gonna give c a - 2
+(Ooh give you b) Never gonna run fib and desert b
+(Ooh give you c) Never gonna run fib and desert c
+(Ooh) Never gonna give, never gonna give (give you b + c)
+
+[Chorus]
+Never gonna let a down
+Never gonna give a {}
+(Ooh give you a) Never gonna run fib and desert a
+Never gonna say a
+    ",
+        arguments.next().unwrap()
+    );
     println!("\"{}\"", raw);
     eprintln!("\x1b[0;31mStarted lexing...\x1b[0m");
     let lexer = Lexer::new(raw);
