@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::expr::*;
 use crate::lexer::Token;
 use crate::util::*;
+use crate::stdlib::BUILTIN_FUNCTIONS;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -155,7 +156,7 @@ impl Parser {
                 }
                 "RUN" => {
                     let name = self.get_name();
-                    if !self.func_cache.contains(&name) {
+                    if !self.func_cache.contains(&name) && !BUILTIN_FUNCTIONS.contains_key(&name) {
                         return Err(Error::new(
                             ErrorType::NameError,
                             &format!("Function name {} doesn't exist", name)[..],
@@ -177,7 +178,7 @@ impl Parser {
                 "RUN_ASSIGN" => {
                     let var_name = self.get_name();
                     let name = self.get_name();
-                    if !self.func_cache.contains(&name) {
+                    if !self.func_cache.contains(&name) && !BUILTIN_FUNCTIONS.contains_key(&name) {
                         return Err(Error::new(
                             ErrorType::NameError,
                             &format!("Function name {} doesn't exist", name)[..],

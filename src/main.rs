@@ -6,31 +6,30 @@ use std::env::args;
 use std::io::*;
 
 fn main() {
-    let mut arguments = args();
-    arguments.next();
-    let raw = format!(
-        "\
-[Verse fib]
-(Ooh give you a)
-Inside we both know a <= 1
-  (Ooh) Never gonna give, never gonna give (give you a)
-Your heart's been aching but you're too shy to say it
-Never gonna let b down
-Never gonna let c down
-Never gonna give b a - 1
-Never gonna give c a - 2
-(Ooh give you b) Never gonna run fib and desert b
-(Ooh give you c) Never gonna run fib and desert c
-(Ooh) Never gonna give, never gonna give (give you b + c)
-
-[Chorus]
-Never gonna let a down
-Never gonna give a {}
-(Ooh give you a) Never gonna run fib and desert a
-Never gonna say a
-    ",
-        arguments.next().unwrap()
-    );
+    let raw = String::from("
+    [Chorus]
+    Never gonna let x down
+    Never gonna let y down
+    Never gonna give x 5
+    Never gonna give y 6
+    Never gonna let a down
+    (Ooh give you a) Never gonna run ArrayOf and desert x, y
+    Never gonna say a
+    Never gonna let i down
+    Never gonna give i 0
+    Inside we both know i <= 10
+        Never gonna let length down
+        (Ooh give you length) Never gonna run ArrayLength and desert a
+        (Ooh give you a) Never gonna run ArrayPush and desert a, length, x
+        Never gonna give i i + 1
+    We know the game and we're gonna play it
+    Never gonna say a
+    Inside we both know TRUE
+        Never gonna give i 0
+        (Ooh give you a) Never gonna run ArrayPop and desert a, i
+        Never gonna say a
+    We know the game and we're gonna play it
+    ");
     println!("\"{}\"", raw);
     eprintln!("\x1b[0;31mStarted lexing...\x1b[0m");
     let lexer = Lexer::new(raw);

@@ -74,6 +74,6 @@ This was changed so that functions could only take variables as arguments.
 
 ### Position of [Intro] and [Chorus] Blocks
 
-The ```[Intro]``` and ```[Chorus]``` blocks are no longer forced to be at the top and bottom of the program, respectively, if they are present. 
+The ```[Intro]``` and ```[Chorus]``` blocks are no longer forced to be at the top and bottom of the program, respectively, if they are present. This addition gives greater freedom to the programmer on function calls.
 
-All functions can only call earlier bindings, including themselves. This addition gives greater freedom to the programmer on function calls.
+All functions can only call earlier bindings, including themselves.

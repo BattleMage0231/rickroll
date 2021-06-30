@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::expr::*;
 use crate::parser::*;
 use crate::util::*;
+use crate::stdlib::BUILTIN_FUNCTIONS;
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -291,6 +292,13 @@ impl Interpreter {
         buffer: &mut dyn Write,
         reader: &mut dyn BufRead,
     ) -> Result<RickrollObject, Error> {
+        if !self.functions.contains_key(&func) && BUILTIN_FUNCTIONS.contains_key(&func) {
+            let mut arg_vals = Vec::new();
+            for arg in passed {
+                arg_vals.push(arg.clone());
+            }
+            return BUILTIN_FUNCTIONS[&func](arg_vals);
+        }
         let function = self.functions.get(&func).unwrap().clone();
         match function {
             ASTNode::Function(_, _, args, body) => {
