@@ -2,7 +2,7 @@
 
 ## Verse Blocks and Execution
 
-In Rickroll, ```[Verse]``` blocks act as functions, or procedures. Verse blocks can only be declared outside of the Chorus blocks.
+In Rickroll, ```[Verse]``` blocks act as functions or procedures. Verse blocks can only be declared outside on the top level of the program.
 
 A function declaration starts with ```[Verse NAME]```, where ```NAME``` follows the same conventions as a variable name. A name may be shared between a variable and function.
 
@@ -14,9 +14,9 @@ A function declaration starts with ```[Verse NAME]```, where ```NAME``` follows 
 Syntax Error: No argument specification for function foo
 ```
 
-Here, we got a syntax error since we haven't indicated what parameters foo will take. All functions must have a constant number of arguments known at runtime by name. 
+Here, we got a syntax error since we haven't indicated what parameters foo will take. All functions must have a constant number of arguments known at runtime by name (except a few built-in functions). 
 
-We must indicate arguments on the line following the verse declaration, using the syntax ```(Ooh give you ARG1, ARG2...)```. When foo is called, the passed varlues will be initialized as variables with the names of these arguments.
+We must indicate arguments on the line following the verse declaration, using the syntax ```(Ooh give you ARG1, ARG2...)```. When foo is called, the passed values will be initialized as variables with the names of these arguments.
 
 If a verse takes no arguments, the keyword ```up``` can be used in place of ```ARG1, ARG2...```.
 
@@ -37,7 +37,7 @@ There is no output here because although we've declared the function, we haven't
 
 Note that ```ARG1, ARG2...``` must be variables and not expressions.
 
-Also note that functions can be recursively called, but there is a 1e4 max recursion depth.
+Functions can be recursively called, but there is a shallow max recursion depth.
 
 ```
 [Verse foo]
@@ -97,7 +97,7 @@ Never gonna say a
 
 In addition to Verse and Chorus blocks, there is another special block called ```[Intro]```. If present, it is executed before Chorus is executed, and it executes in the global scope.
 
-This means that all variables declared in the Intro block may be used in all functions.
+This means that all variables declared in the Intro block are global variables.
 
 ```
 [Intro]

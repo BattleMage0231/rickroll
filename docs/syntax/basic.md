@@ -9,7 +9,7 @@ Currently, rickroll supports the following data types.
 | FLOAT       | an 32-bit floating point number                               |
 | BOOL        | TRUE or FALSE                                                 | 
 | CHAR        | a character                                                   | 
-| ARRAY       | a list of data types (not yet implemented)                    | 
+| ARRAY       | a list of other data types                                    | 
 | UNDEFINED   | nothing (a variable's value before initialization)            | 
 
 Operators can be used to perform operations on data types. The following operators are supported and evaluated in order.
@@ -37,9 +37,7 @@ Expressions are formed by combining data types and operators. Expressions may al
 
 ## Structure of a Program
 
-Currently, Rickroll has a relatively simple program structure. For now, we will do everything under a ```[Chorus]``` block, which is like the main function in other languages. There can only be one Chorus block in a single program.
-
-In the future, we will introduce ```[Verse]``` and ```[Intro]``` blocks, which will go outside the Chorus block.
+The ```[Chorus]``` block is similar to the main function in other languages. There can only be one Chorus block in a single program.
 
 ```
 [Chorus]
@@ -65,11 +63,11 @@ TRUE
 
 ## Variables
 
-Recall that Rickroll is a dynamically-typed language. This means that variable types are inferred at runtime and variables may be assigned a value of a different type.
+Recall that Rickroll is a dynamically-typed language. This means that variable types are inferred and variables may be assigned a value of a different type. In addition, all variables including arrays are immutable.
 
-To declare a variable, use the syntax ```Never gonna let VAR down```, where ```VAR``` can only have English letters and underscores.
+To declare a variable, use the syntax ```Never gonna let VAR down```, where ```VAR``` can only have alphabet letters and underscores.
 
-The initial value of a variable is UNDEFINED, a special data type.
+The initial value of a variable is UNDEFINED, which is a special data type.
 
 ```
 [Chorus]
