@@ -59,17 +59,22 @@ You must have Rust installed to built this project (tested with rustc 1.48.0). T
    git clone https://github.com/BattleMage0231/rickroll.git
    cd rickroll
    ```
-2. To build the executable or run the program, do one of the following
+2. To build the executable, do one of the following
    ```sh
    cargo build # generates debug executable at target/debug/rickroll
    cargo build --release # generate optimized executable at target/rls/rickroll
-   cargo run # build debug executable and run immediately
    ```
 
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-The full language documentation and interpreter guide can be found in the [docs](./docs) directory. Following are some example code snippets.
+Provide the executable with a Rickroll source code file. Optionally, you may print debugging information with --debug.
+
+```sh
+rickroll [FLAGS] <file>
+```
+
+The full language documentation can be found in the [docs](./docs) directory. Following are some example code snippets.
 
 ### Recursive Fibonacci
 
