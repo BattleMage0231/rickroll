@@ -94,7 +94,17 @@ impl Interpreter {
                             _ => Err(eval_err(op)),
                         },
                         Divide => match (first, second) {
-                            (Int(x), Int(y)) => Ok(Int(x.wrapping_div(y))),
+                            (Int(x), Int(y)) => {
+                                if y == 0 {
+                                    Err(Error::new(
+                                        ErrorType::RuntimeError,
+                                        &format!("Division by zero")[..],
+                                        None,
+                                    ))
+                                } else {
+                                    Ok(Int(x.wrapping_div(y)))
+                                }
+                            },
                             (Float(x), Float(y)) => Ok(Float(x / y)),
                             _ => Err(eval_err(op)),
                         },
