@@ -62,7 +62,7 @@ You must have Rust installed to built this project (tested with rustc 1.48.0). T
 2. To build the executable, do one of the following
    ```sh
    cargo build # generates debug executable at target/debug/rickroll
-   cargo build --release # generate optimized executable at target/rls/rickroll
+   cargo build --release # generate optimized executable at target/release/rickroll
    ```
 
 <!-- USAGE EXAMPLES -->
