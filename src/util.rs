@@ -140,17 +140,11 @@ impl Scope {
         self.contexts.append(&mut contexts);
     }
 
-    pub fn head(&mut self) -> &Context {
-        return &self.contexts[0];
-    }
-
     pub fn behead(&mut self) -> Vec<Context> {
         if self.contexts.len() < 2 {
             panic!("Empty or unit scope cannot be beheaded");
         }
-        let tail = Vec::from(&self.contexts[1..]);
-        self.contexts.truncate(1);
-        return tail;
+        return self.contexts.split_off(1);
     }
 
     pub fn get_global(&mut self) -> &mut Context {
