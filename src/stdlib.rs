@@ -102,9 +102,7 @@ fn put_char(args: Vec<RickrollObject>, writer: &mut dyn Write, _: &mut dyn BufRe
     }
     let chr = args[0].clone();
     if let RickrollObject::Char(x) = chr {
-        let mut buffer: [u8; 4] = [0; 4];
-        x.encode_utf8(&mut buffer);
-        writer.write(&buffer).unwrap();
+        write!(writer, "{}", x).unwrap();
         return Ok(RickrollObject::Undefined);
     }
     return Err(Error::new(ErrorType::RuntimeError, "Wrong type of arguments for PutChar", None));
