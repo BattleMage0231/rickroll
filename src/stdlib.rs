@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
+use std::rc::Rc;
 
 type LibFunction = fn(Vec<RickrollObject>, &mut dyn Write, &mut dyn BufRead) -> Result<RickrollObject, Error>;
 
@@ -23,7 +24,7 @@ lazy_static! {
 }
 
 fn array_of(args: Vec<RickrollObject>, _: &mut dyn Write, _: &mut dyn BufRead) -> Result<RickrollObject, Error> {
-    return Ok(RickrollObject::Array(args));
+    return Ok(RickrollObject::Array(Rc::new(args)));
 }
 
 fn array_pop(args: Vec<RickrollObject>, _: &mut dyn Write, _: &mut dyn BufRead) -> Result<RickrollObject, Error> {
@@ -32,11 +33,12 @@ fn array_pop(args: Vec<RickrollObject>, _: &mut dyn Write, _: &mut dyn BufRead) 
     }
     let arr = args[0].clone();
     let idx = args[1].clone();
-    if let RickrollObject::Array(mut x) = arr {
+    if let RickrollObject::Array(x) = arr {
+        let mut x = (*x).clone();
         if let RickrollObject::Int(y) = idx {
             if y >= 0 && (y as usize) < x.len() {
                 x.remove(y as usize);
-                return Ok(RickrollObject::Array(x));
+                return Ok(RickrollObject::Array(Rc::new(x)));
             }  else {
                 return Err(Error::new(ErrorType::RuntimeError, "Array Index out of Bounds", None));
             }
@@ -52,11 +54,12 @@ fn array_push(args: Vec<RickrollObject>, _: &mut dyn Write, _: &mut dyn BufRead)
     let arr = args[0].clone();
     let idx = args[1].clone();
     let val = args[2].clone();
-    if let RickrollObject::Array(mut x) = arr {
+    if let RickrollObject::Array(x) = arr {
         if let RickrollObject::Int(y) = idx {
+            let mut x = (*x).clone();
             if y >= 0 && (y as usize) <= x.len() {
                 x.insert(y as usize, val);
-                return Ok(RickrollObject::Array(x));
+                return Ok(RickrollObject::Array(Rc::new(x)));
             } else {
                 return Err(Error::new(ErrorType::RuntimeError, "Array Index out of Bounds", None));
             }
@@ -72,11 +75,12 @@ fn array_replace(args: Vec<RickrollObject>, _: &mut dyn Write, _: &mut dyn BufRe
     let arr = args[0].clone();
     let idx = args[1].clone();
     let val = args[2].clone();
-    if let RickrollObject::Array(mut x) = arr {
+    if let RickrollObject::Array(x) = arr {
         if let RickrollObject::Int(y) = idx {
+            let mut x = (*x).clone();
             if y >= 0 && (y as usize) < x.len() {
                 x[y as usize] = val;
-                return Ok(RickrollObject::Array(x));
+                return Ok(RickrollObject::Array(Rc::new(x)));
             } else {
                 return Err(Error::new(ErrorType::RuntimeError, "Array Index out of Bounds", None));
             }
@@ -121,5 +125,5 @@ fn read_line(args: Vec<RickrollObject>, _: &mut dyn Write, reader: &mut dyn BufR
         }
         arr.push(RickrollObject::Char(c));
     }
-    return Ok(RickrollObject::Array(arr));
+    return Ok(RickrollObject::Array(Rc::new(arr)));
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
 // collection of data types
 #[derive(Debug, Clone)]
@@ -6,7 +7,7 @@ pub enum RickrollObject {
     Int(i32),
     Float(f32),
     Bool(bool),
-    Array(Vec<RickrollObject>),
+    Array(Rc<Vec<RickrollObject>>),
     Char(char),
     Undefined,
 }
@@ -74,7 +75,7 @@ pub fn from_constant(constant: &String) -> Option<RickrollObject> {
         "TRUE" => Some(RickrollObject::Bool(true)),
         "FALSE" => Some(RickrollObject::Bool(false)),
         "UNDEFINED" => Some(RickrollObject::Undefined),
-        "ARRAY" => Some(RickrollObject::Array(Vec::new())),
+        "ARRAY" => Some(RickrollObject::Array(Rc::new(Vec::new()))),
         _ => None,
     }
 }
